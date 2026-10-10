@@ -34,7 +34,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.firebase.auth.FirebaseAuth
 import com.yugentech.quill.database.mapper.toBook
 import com.yugentech.quill.database.model.Book
 import com.yugentech.quill.database.model.BookSource
@@ -91,7 +90,7 @@ fun MainScreen(
     onWhatsNew: () -> Unit,
     indexingViewModel: IndexingViewModel = koinViewModel()
 ) {
-    val userId = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+    val userId = remember { "local" }
 
     LaunchedEffect(userId) {
         if (userId.isNotEmpty()) userViewModel.loadUser(userId)
@@ -99,36 +98,6 @@ fun MainScreen(
 
     val context = LocalContext.current
     var toastMessage by remember { mutableStateOf<String?>(null) }
-    var hasCheckedPermission by rememberSaveable { mutableStateOf(false) }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            if (!isGranted) {
-                toastMessage =
-                    "Notification permission denied. Please enable notifications to get your reading reminders."
-            }
-        }
-    )
-
-    // Android 13+ needs POST_NOTIFICATIONS granted at runtime, and notifications default to
-    // enabled in settings -- so ask once on launch, otherwise reminders would be silently
-    // dropped while the settings toggle still shows them as on.
-    LaunchedEffect(Unit) {
-        if (!hasCheckedPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val hasPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-
-            if (!hasPermission) {
-                delay(500)
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            hasCheckedPermission = true
-        }
-    }
-
     val userUiState by userViewModel.uiState.collectAsStateWithLifecycle()
     val userData = userUiState.user ?: UserData()
 

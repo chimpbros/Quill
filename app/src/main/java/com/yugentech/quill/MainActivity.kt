@@ -18,7 +18,6 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
-import com.yugentech.quill.auth.viewmodel.AuthViewModel
 import com.yugentech.quill.navigation.host.AppNavHost
 import com.yugentech.quill.theme.viewmodel.ThemeViewModel
 import com.yugentech.theme.QuillTheme
@@ -33,7 +32,6 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class MainActivity : FragmentActivity() {
 
-    private val authViewModel: AuthViewModel by viewModel()
     private var shouldNavigateToHome by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,16 +45,14 @@ class MainActivity : FragmentActivity() {
 
         super.onCreate(savedInstanceState)
         splashScreen.setKeepOnScreenCondition {
-            !animationReady.value ||
-                    authViewModel.authState.value.isInitializing ||
-                    authViewModel.showOnboarding.value == null
+            !animationReady.value
         }
 
         setContent {
             val navController = rememberNavController()
 
-            val showOnboarding by authViewModel.showOnboarding.collectAsStateWithLifecycle()
-            val authState by authViewModel.authState.collectAsStateWithLifecycle()
+            val showOnboarding = false
+
 
             val themeViewModel: ThemeViewModel = koinViewModel()
             val themeConfiguration by themeViewModel.themeConfiguration.collectAsStateWithLifecycle()
@@ -86,17 +82,15 @@ class MainActivity : FragmentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val authState by authViewModel.authState.collectAsStateWithLifecycle()
 
-                    if (showOnboarding != null && !authState.isInitializing) {
+
+                    if (true) {
                         AppNavHost(
                             navController = navController,
-                            webClientId = BuildConfig.WEB_CLIENT_ID,
-                            authViewModel = authViewModel,
                             themeViewModel = themeViewModel,
-                            showOnboarding = showOnboarding!!,
+                            showOnboarding = showOnboarding,
                             onOnboardingComplete = {
-                                authViewModel.completeOnboarding()
+                                Unit
                             },
                             shouldNavigateToHome = shouldNavigateToHome,
                             onNavigatedToHome = {

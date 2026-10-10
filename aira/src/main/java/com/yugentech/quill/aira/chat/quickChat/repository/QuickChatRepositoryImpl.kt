@@ -2,7 +2,6 @@ package com.yugentech.quill.aira.chat.quickChat.repository
 
 import android.content.Context
 import android.util.Base64
-import com.google.firebase.functions.FirebaseFunctionsException
 import com.yugentech.quill.aira.chat.quickChat.model.QuickChatPayload
 import com.yugentech.quill.aira.chat.quickChat.model.QuickChatType
 import com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt
@@ -264,17 +263,16 @@ class QuickChatRepositoryImpl(
 
                     emit(AiraResponse.ImageSuccess(imageFile.absolutePath))
                 } catch (e: Exception) {
+            if(e is kotlinx.coroutines.CancellationException) throw e
                     Timber.e(e, "VisualizeThis failed")
                     val errorMsg = when {
                         e.message?.contains("resource-exhausted") == true ->
-                            "You've reached your free limit. Upgrade to Quill Pro."
+                            "This provider's usage limit has been reached."
                         // A clean model decline (nothing visual in the passage) rather than a
                         // technical failure -- the function already puts a friendly, specific
                         // message here, so just pass it through instead of the generic fallback.
-                        (e as? FirebaseFunctionsException)?.code ==
-                            FirebaseFunctionsException.Code.FAILED_PRECONDITION ->
-                            e.message ?: "This passage doesn't have enough visual detail to generate an image."
-                        else -> "Something went wrong generating that image. Please try again."
+
+                        else -> (e as? com.yugentech.quill.domain.ai.AiException)?.message ?: "Something went wrong generating that image. Please try again."
                     }
                     emit(AiraResponse.Error(errorMsg))
                 }
@@ -300,8 +298,10 @@ class QuickChatRepositoryImpl(
         }
 
         try {
-            val responseText = actionService.getQuickChatResponse(payload)
-            Timber.d("QuickChat[${payload.actionType}] query=\"${payload.query}\" response: $responseText")
+            actionService.getQuickChatResponse(payload).collect { event ->
+            if (event is AiraResponse.Partial) { emit(event); return@collect }
+            if (event !is AiraResponse.Success) { emit(event); return@collect }
+            val responseText = event.text
 
             if (responseText.isBlank()) {
                 emit(AiraResponse.Error("Aira didn't have a response."))
@@ -310,28 +310,29 @@ class QuickChatRepositoryImpl(
                 // get recorded under a premade stand-in statement -- this is what makes them show
                 // up in the full chat history/transcript alongside typed messages, instead of
                 // vanishing once the peek bar closes.
-                airaMessageDao.insertMessage(
+                airaMessageDao.insertMessages(listOf(
                     AiraMessageEntity(
                         bookId = bookId,
                         role = AiraMessageRole.USER,
-                        content = quickPrompt.toHistoryStatement()
+                        content = quickPrompt.toHistoryStatement(), chapterIndex = book.lastChapterIndex
                     )
-                )
-                airaMessageDao.insertMessage(
+                ,
                     AiraMessageEntity(
                         bookId = bookId,
                         role = AiraMessageRole.AIRA,
-                        content = responseText.trim()
+                        content = responseText.trim(), chapterIndex = book.lastChapterIndex
                     )
-                )
+                ))
                 emit(AiraResponse.Success(responseText.trim()))
             }
 
+            }
         } catch (e: Exception) {
+            if(e is kotlinx.coroutines.CancellationException) throw e
             val errorMsg = when {
                 e.message?.contains("resource-exhausted") == true ->
-                    "You've reached your free limit. Upgrade to Quill Pro."
-                else -> "Something went wrong. Please try again."
+                    "This provider's usage limit has been reached."
+                else -> (e as? com.yugentech.quill.domain.ai.AiException)?.message ?: "Something went wrong. Please try again."
             }
             emit(AiraResponse.Error(errorMsg))
         }

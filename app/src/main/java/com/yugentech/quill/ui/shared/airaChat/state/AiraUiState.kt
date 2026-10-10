@@ -1,7 +1,6 @@
 package com.yugentech.quill.ui.shared.airaChat.state
 
 import com.yugentech.quill.aira.message.AiraMessage
-import com.yugentech.quill.quota.model.QuotaLimits
 import com.yugentech.theme.tokens.AppConstants.EMPTY
 
 data class AiraUiState(
@@ -18,7 +17,5 @@ data class AiraUiState(
     val spoilerLockEnabled: Boolean = true,
     val error: String? = null,
     val canSendQuery: Boolean = true,
-    val remainingQueries: Int = QuotaLimits.FREE,
-    val showPaywall: Boolean = false,
     val isPro: Boolean = false
 )

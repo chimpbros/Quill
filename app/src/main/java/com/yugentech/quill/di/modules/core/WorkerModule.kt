@@ -3,7 +3,6 @@ package com.yugentech.quill.di.modules.core
 import androidx.work.WorkManager
 import com.yugentech.quill.aira.rag.BookEmbeddingWorker
 import com.yugentech.quill.bookDetails.worker.BookDownloadWorker
-import com.yugentech.quill.cloud.worker.SyncWorker
 import com.yugentech.quill.notification.worker.PlayfulReminderWorker
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.workmanager.dsl.workerOf
@@ -23,9 +22,6 @@ val workerModule = module {
         constructor = ::BookEmbeddingWorker
     )
 
-    workerOf(
-        constructor = ::SyncWorker
-    )
 
     workerOf(
         constructor = ::PlayfulReminderWorker

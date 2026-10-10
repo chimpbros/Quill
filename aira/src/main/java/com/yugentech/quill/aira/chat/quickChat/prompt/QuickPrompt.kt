@@ -18,11 +18,3 @@ sealed class QuickPrompt {
     ) : QuickPrompt()
     data class CustomQuestion(val selectedText: String, val query: String) : QuickPrompt()
 }
-
-// Most quick actions cost 1 quota unit; image generation is meaningfully more expensive to
-// run, so it's weighted higher rather than charged the same as a plain text response.
-val QuickPrompt.quotaCost: Int
-    get() = when (this) {
-        is QuickPrompt.VisualizeThis -> 3
-        else -> 1
-    }

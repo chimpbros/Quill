@@ -47,7 +47,7 @@ class UserDataStore(
             SettingsConfiguration(
                 hapticsEnabled = prefs[HAPTICS_ENABLED] ?: true,
                 notificationConfig = NotificationConfig(
-                    notificationsEnabled = prefs[NOTIFICATIONS_ENABLED] ?: true,
+                    notificationsEnabled = prefs[NOTIFICATIONS_ENABLED] ?: false,
                     readingRemindersEnabled = prefs[READING_REMINDERS_ENABLED] ?: false,
                     playfulRemindersEnabled = prefs[PLAYFUL_REMINDERS_ENABLED] ?: false,
                     reminderTimeHour = prefs[REMINDER_HOUR] ?: 20,

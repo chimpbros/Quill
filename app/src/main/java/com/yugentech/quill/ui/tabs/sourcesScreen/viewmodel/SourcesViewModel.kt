@@ -10,7 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.yugentech.quill.aira.rag.BookEmbeddingWorker
 import com.yugentech.quill.database.dao.BookDao
-import com.yugentech.quill.domain.BillingRepository
+import com.yugentech.quill.domain.FeatureAccess
 import com.yugentech.quill.ui.tabs.sourcesScreen.result.ImportResult
 import com.yugentech.quill.ui.tabs.sourcesScreen.util.LocalBookImporter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 
 class SourcesViewModel(
     private val bookDao: BookDao,
-    private val billingRepository: BillingRepository
+    private val featureAccess: FeatureAccess
 ) : ViewModel() {
 
     private val _isImporting = MutableStateFlow(false)

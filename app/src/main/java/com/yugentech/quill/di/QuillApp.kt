@@ -5,8 +5,6 @@ import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.yugentech.quill.BuildConfig
-import com.yugentech.quill.di.modules.access.authModule
-import com.yugentech.quill.di.modules.access.billingModule
 import com.yugentech.quill.di.modules.access.userModule
 import com.yugentech.quill.di.modules.books.booksModule
 import com.yugentech.quill.di.modules.books.indexingModule
@@ -15,11 +13,9 @@ import com.yugentech.quill.di.modules.books.storageModule
 import com.yugentech.quill.di.modules.config.categoryModule
 import com.yugentech.quill.di.modules.config.themeModule
 import com.yugentech.quill.di.modules.config.settingsModule
-import com.yugentech.quill.di.modules.core.cloudModule
 import com.yugentech.quill.di.modules.notification.notificationModule
 import com.yugentech.quill.di.modules.core.dataStoreModule
 import com.yugentech.quill.di.modules.core.databaseModule
-import com.yugentech.quill.di.modules.core.firebaseModule
 import com.yugentech.quill.di.modules.core.networkModule
 import com.yugentech.quill.di.modules.core.workerModule
 import com.yugentech.quill.di.modules.shared.airaModule
@@ -48,19 +44,16 @@ class QuillApp : Application(), Configuration.Provider, ImageLoaderFactory {
             workManagerFactory()
 
             modules(
-                authModule,
-                billingModule,
                 userModule,
+                personalModule,
                 booksModule,
                 indexingModule,
                 sourcesModule,
                 storageModule,
                 categoryModule,
                 themeModule,
-                cloudModule,
                 databaseModule,
                 dataStoreModule,
-                firebaseModule,
                 networkModule,
                 workerModule,
                 airaModule,

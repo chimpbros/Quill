@@ -28,7 +28,5 @@ android {
 }
 
 dependencies {
-    implementation(libs.firebase.auth.ktx)
-    implementation(libs.billing.ktx)
     implementation(libs.kotlinx.coroutines.android)
 }

@@ -1,95 +1,10 @@
 package com.yugentech.quill.user.repository
-
+import com.yugentech.quill.database.dao.UserDao
 import com.yugentech.quill.database.entity.UserEntity
 import com.yugentech.quill.database.model.UserData
-import com.yugentech.quill.user.service.SyncDataStore
-import com.yugentech.quill.database.dao.UserDao
-import com.yugentech.quill.user.result.UserResult
-import com.yugentech.quill.user.service.UserService
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import timber.log.Timber
-
-class UserRepositoryImpl(
-    private val userDao: UserDao,
-    private val userService: UserService,
-    private val syncDataStore: SyncDataStore
-) : UserRepository {
-
-    override fun getUserFlow(userId: String): Flow<UserData?> {
-        return userDao.getUserFlow(userId)
-            .map { entity -> entity?.toUserData() }
-    }
-
-    override suspend fun upsertUser(userData: UserData) {
-        try {
-            Timber.d("Upserting user locally: ${userData.userId}")
-            val entity = UserEntity.fromUserData(userData)
-            userDao.saveUser(entity)
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to upsert user locally")
-            throw e
-        }
-    }
-
-    override suspend fun getUser(userId: String): UserData? {
-        return userDao.getUser(userId)?.toUserData()
-    }
-
-    override suspend fun syncUser(userData: UserData): UserResult<Unit> {
-        Timber.i("Syncing user data to cloud: ${userData.userId}")
-        return userService.uploadUser(userData)
-    }
-
-    override suspend fun fetchUserOnce(userId: String): UserResult<Unit> {
-        return try {
-            val alreadyFetched = syncDataStore.isUserFetchDone.first()
-
-            if (alreadyFetched) {
-                val localUser = userDao.getUser(userId)
-                if (localUser != null) {
-                    return UserResult.Success(Unit)
-                }
-                // Sync flag is set but local DB is empty — stale flag from a DB wipe.
-                // Reset it so we fall through to a fresh Firestore fetch.
-                Timber.w("Sync flag set but local user missing; re-fetching from cloud")
-                syncDataStore.setUserFetchDone(false)
-            }
-
-            Timber.i("Performing initial user profile fetch")
-            when (val result = userService.fetchUser(userId)) {
-                is UserResult.Success -> {
-                    val userData = result.data
-                    Timber.d("Fetched user profile from cloud. Saving locally.")
-
-                    val entity = UserEntity.fromUserData(userData)
-                    userDao.saveUser(entity)
-
-                    syncDataStore.setUserFetchDone(true)
-                    UserResult.Success(Unit)
-                }
-
-                is UserResult.Error -> {
-                    Timber.w("Failed to fetch user from cloud: ${result.message}")
-                    result
-                }
-
-                is UserResult.Loading -> {
-                    UserResult.Loading
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Exception during user fetch")
-            UserResult.Error(e.message ?: "Failed to fetch user")
-        }
-    }
-
-    override suspend fun updateProStatus(userId: String, isPro: Boolean) {
-        userService.updateProStatus(userId, isPro)
-        val currentEntity = userDao.getUser(userId)
-        if (currentEntity != null) {
-            userDao.saveUser(currentEntity.copy(isPro = isPro))
-        }
-    }
+class UserRepositoryImpl(private val userDao: UserDao, private val context: android.content.Context): UserRepository {
+ override suspend fun getUser(userId:String) = userDao.getUser(userId)?.toUserData()
+ override fun getUserFlow(userId:String) = userDao.getUserFlow(userId).map { it?.toUserData() ?: UserData(userId="local",name="Reader") }
+ override suspend fun upsertUser(userData:UserData) { userDao.saveUser(UserEntity.fromUserData(userData.copy(userId="local")));context.getSharedPreferences("local_profile",0).edit().putString("name",userData.name).apply() }
 }

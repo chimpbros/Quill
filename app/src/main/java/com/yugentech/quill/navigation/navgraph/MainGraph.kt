@@ -8,7 +8,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.yugentech.quill.ui.tabs.libraryScreen.viewmodel.SeeAllViewModel
-import com.yugentech.quill.auth.viewmodel.AuthViewModel
 import com.yugentech.quill.database.model.BookSource
 import com.yugentech.quill.library.viewmodel.LibraryViewModel
 import com.yugentech.quill.navigation.screen.AppScreen
@@ -24,7 +23,6 @@ fun NavGraphBuilder.mainGraph(
 ) {
     composable(AppScreen.Main.route) {
         val libraryViewModel: LibraryViewModel = koinViewModel()
-        val authViewModel: AuthViewModel = koinViewModel()
         MainScreen(
             libraryViewModel = libraryViewModel,
             onLibraryBookClick = { book ->
@@ -80,13 +78,13 @@ fun NavGraphBuilder.mainGraph(
                 navController.navigate(AppScreen.Insights.route) { launchSingleTop = true }
             },
             onSubscriptions = {
-                navController.navigate(AppScreen.Subscriptions.route) { launchSingleTop = true }
+                navController.navigate("ai_connections") { launchSingleTop = true }
             },
             onExitApp = {
                 (context as? Activity)?.finishAffinity()
             },
             onSignOut = {
-                authViewModel.signOut()
+                Unit
             },
             onViewIndexingQueue = {
                 navController.navigate(AppScreen.Queue.route) { launchSingleTop = true }

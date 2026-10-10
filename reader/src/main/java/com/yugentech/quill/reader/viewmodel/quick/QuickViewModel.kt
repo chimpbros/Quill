@@ -5,12 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.yugentech.quill.aira.repository.AiraChatRepository
 import com.yugentech.quill.reader.repository.book.ReaderBookRepository
 import com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt
-import com.yugentech.quill.aira.chat.quickChat.prompt.quotaCost
 import com.yugentech.quill.aira.chat.quickChat.repository.QuickChatRepository
 import com.yugentech.quill.aira.response.AiraResponse
-import com.yugentech.quill.domain.AuthRepository
-import com.yugentech.quill.domain.BillingRepository
-import com.yugentech.quill.domain.QuotaRepository
+import com.yugentech.quill.domain.FeatureAccess
 import com.yugentech.theme.tokens.AppConstants.EMPTY
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,26 +19,20 @@ import kotlinx.coroutines.launch
 class QuickViewModel(
     private val airaChatRepository: AiraChatRepository,
     private val quickRepository: QuickChatRepository,
-    private val quotaRepository: QuotaRepository,
-    private val authRepository: AuthRepository,
     private val readerRepository: ReaderBookRepository,
-    private val billingRepository: BillingRepository
+    private val featureAccess: FeatureAccess,
+    private val gateway: com.yugentech.quill.aira.provider.DirectAiGateway
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(QuickUiState())
     val uiState = _uiState.asStateFlow()
 
     private var activeJob: Job? = null
-    private val currentUserId: String? get() = authRepository.currentUser
 
     init {
+
         viewModelScope.launch {
-            quotaRepository.canSendQuery.collectLatest { canSend ->
-                _uiState.update { it.copy(canSendQuery = canSend) }
-            }
-        }
-        viewModelScope.launch {
-            billingRepository.isPro.collectLatest { isPro ->
+            featureAccess.indexingEnabled.collectLatest { isPro ->
                 _uiState.update { it.copy(isPro = isPro) }
             }
         }
@@ -56,6 +47,7 @@ class QuickViewModel(
     }
 
     fun ask(bookId: String, query: String) {
+        if(!gateway.configured()) { _uiState.update { it.copy(error="Choose a text connection in More → AI Connections.") };return }
         if (query.isBlank() || _uiState.value.isLoading) return
         if (!checkQuota()) return
 
@@ -66,10 +58,7 @@ class QuickViewModel(
             try {
                 airaChatRepository.ask(bookId, query).collect { response ->
                     handleResponseStream(response) {
-                        if (!hasConsumedQuota) {
-                            hasConsumedQuota = true
-                            consumeQuota()
-                        }
+
                     }
                 }
             } finally {
@@ -79,6 +68,8 @@ class QuickViewModel(
     }
 
     fun handleQuickPrompt(bookId: String, intent: QuickPrompt) {
+        val slot=if(intent is QuickPrompt.VisualizeThis) "image" else "text"
+        if(!gateway.configured(slot)) { _uiState.update { it.copy(error="Choose a $slot connection in More → AI Connections.") };return }
         if (_uiState.value.isLoading) return
         if (!checkQuota()) return
 
@@ -91,7 +82,7 @@ class QuickViewModel(
                     handleResponseStream(response) {
                         if (!hasConsumedQuota) {
                             hasConsumedQuota = true
-                            consumeQuota(amount = intent.quotaCost)
+                            Unit
                         }
                     }
                 }
@@ -103,13 +94,14 @@ class QuickViewModel(
 
     private fun handleResponseStream(response: AiraResponse, onFirstSuccess: () -> Unit) {
         when (response) {
-            is AiraResponse.Success -> {
+            is AiraResponse.Partial, is AiraResponse.Success -> {
+                val responseText = if(response is AiraResponse.Partial) response.text else (response as AiraResponse.Success).text
                 onFirstSuccess()
                 _uiState.update {
                     it.copy(
-                        isLoading = false,
-                        isStreaming = true,
-                        response = response.text,
+                        isLoading = response is AiraResponse.Partial,
+                        isStreaming = response is AiraResponse.Partial,
+                        response = responseText,
                         imagePath = null,
                         error = null
                     )
@@ -155,19 +147,9 @@ class QuickViewModel(
         }
     }
 
-    private fun checkQuota(): Boolean {
-        if (!_uiState.value.canSendQuery) {
-            _uiState.update { it.copy(showPaywall = true) }
-            return false
-        }
-        return true
-    }
+    private fun checkQuota(): Boolean = true
 
-    private fun consumeQuota(amount: Int = 1) {
-        currentUserId?.let { uid ->
-            viewModelScope.launch { quotaRepository.consumeQuery(uid, amount) }
-        }
-    }
+
 
     fun stopGeneration() {
         activeJob?.cancel()

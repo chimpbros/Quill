@@ -128,7 +128,7 @@ fun NavGraphBuilder.bookFeatureGraph(
             viewModel = airaViewModel,
             onBackClick = { navController.popBackStack() },
             navigateToSubscriptions = {
-                navController.navigate(AppScreen.Subscriptions.route) {
+                navController.navigate("ai_connections") {
                     launchSingleTop = true
                 }
             }

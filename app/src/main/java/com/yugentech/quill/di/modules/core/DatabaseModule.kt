@@ -15,8 +15,7 @@ val databaseModule = module {
             AppDatabase::class.java,
             "quill_database"
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-            .fallbackToDestructiveMigration(true)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, com.yugentech.quill.database.database.MIGRATION_3_4)
             .build()
     }
 
@@ -52,9 +51,6 @@ val databaseModule = module {
         get<AppDatabase>().readingSessionDao()
     }
 
-    single {
-        get<AppDatabase>().quotaDao()
-    }
 
     single {
         get<AppDatabase>().bookIndexingStateDao()

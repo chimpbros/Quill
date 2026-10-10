@@ -46,36 +46,36 @@ val airaModule = module {
 
     single {
         VoiceOutputManager(
-            functions = get(),
-            cacheDir = androidContext().cacheDir
+            gateway = get(),
+            context = androidContext()
         )
     }
 
     // --- Intent Detection ---
-    single { IntentDetectionService(functions = get()) }
+    single { IntentDetectionService(gateway = get()) }
     single { IntentDetectionRepository(detectionService = get()) }
 
     // --- Services ---
-    single { GeneralChatService(functions = get()) }
-    single { BookChatService(functions = get()) }
-    single { QuickChatService(functions = get()) }
-    single { VisualizeService(functions = get()) }
+    single { GeneralChatService(gateway = get()) }
+    single { BookChatService(gateway = get()) }
+    single { QuickChatService(gateway = get()) }
+    single { VisualizeService(gateway = get()) }
 
     // --- Repositories ---
-    single<BookChatRepository> { 
+    single<BookChatRepository> {
         BookChatRepositoryImpl(
             chatService = get(),
             ragRetriever = get(),
             epubTextExtractor = get()
         )
     }
-    
-    single<GeneralChatRepository> { 
+
+    single<GeneralChatRepository> {
         GeneralChatRepositoryImpl(
             chatService = get()
-        ) 
+        )
     }
-    
+
     single<QuickChatRepository> {
         QuickChatRepositoryImpl(
             context = androidContext(),
@@ -97,7 +97,7 @@ val airaModule = module {
             bookChatRepository = get(),
             bookDao = get(),
             airaMessageDao = get(),
-            authRepository = get()
+            localProfile = get()
         )
     }
 

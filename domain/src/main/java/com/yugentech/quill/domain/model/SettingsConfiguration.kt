@@ -1,7 +1,7 @@
 package com.yugentech.quill.domain.model
 
 data class NotificationConfig(
-    val notificationsEnabled: Boolean = true,
+    val notificationsEnabled: Boolean = false,
     val readingRemindersEnabled: Boolean = false,
     val playfulRemindersEnabled: Boolean = false,
     val reminderTimeHour: Int = 20,

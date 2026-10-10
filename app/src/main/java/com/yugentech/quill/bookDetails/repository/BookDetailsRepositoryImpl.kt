@@ -6,7 +6,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.yugentech.quill.bookDetails.worker.BookDownloadWorker
-import com.yugentech.quill.cloud.repository.CloudSyncRepository
 import com.yugentech.quill.database.dao.BookChunkDao
 import com.yugentech.quill.database.dao.BookDao
 import com.yugentech.quill.database.dao.BookIndexingStateDao
@@ -26,8 +25,7 @@ class BookDetailsRepositoryImpl(
     private val categoryDao: CategoryDao,
     private val chunkDao: BookChunkDao,
     private val indexingStateDao: BookIndexingStateDao,
-    private val workManager: WorkManager,
-    private val cloudSyncRepository: CloudSyncRepository
+    private val workManager: WorkManager
 ) : BookDetailsRepository {
 
     override fun getBook(bookId: String): Flow<BookEntity?> =
@@ -97,7 +95,6 @@ class BookDetailsRepositoryImpl(
             downloadRequest
         )
 
-        cloudSyncRepository.scheduleBackgroundSync()
     }
 
     override suspend fun removeDownload(bookId: String) {
@@ -114,7 +111,6 @@ class BookDetailsRepositoryImpl(
         workManager.cancelAllWorkByTag("index_$bookId")
         indexingStateDao.deleteState(bookId)
         bookDao.deleteBook(bookId)
-        cloudSyncRepository.deleteBookFromCloud(bookId)
     }
 
     override suspend fun updateFavorite(book: Book, isFavorite: Boolean) {
@@ -128,7 +124,6 @@ class BookDetailsRepositoryImpl(
                 ).copy(isSynced = false)
             )
         }
-        cloudSyncRepository.scheduleBackgroundSync()
     }
 
     override suspend fun updateCategory(book: Book, newCategory: String) {
@@ -142,7 +137,6 @@ class BookDetailsRepositoryImpl(
                 ).copy(isSynced = false)
             )
         }
-        cloudSyncRepository.scheduleBackgroundSync()
     }
 
     override suspend fun updateProgress(bookId: String, progressPercent: Float, chapterIndex: Int) {
@@ -156,13 +150,11 @@ class BookDetailsRepositoryImpl(
                 locatorJson = existing.lastLocatorJson,
                 readTime = System.currentTimeMillis()
             )
-            cloudSyncRepository.scheduleBackgroundSync()
         }
     }
 
     override suspend fun resetReadingProgress(bookId: String) {
         bookDao.resetReadingProgress(bookId)
-        cloudSyncRepository.scheduleBackgroundSync()
     }
 
     override suspend fun removeFromRecent(bookId: String) {

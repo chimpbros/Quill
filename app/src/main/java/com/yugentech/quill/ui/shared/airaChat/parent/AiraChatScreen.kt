@@ -53,7 +53,6 @@ import com.yugentech.quill.ui.shared.airaChat.components.AiraChatHistory
 import com.yugentech.quill.ui.shared.airaChat.components.AiraEmptyState
 import com.yugentech.quill.ui.shared.airaChat.components.AiraResetDialog
 import com.yugentech.quill.ui.shared.airaChat.components.InputBar
-import com.yugentech.quill.ui.shared.airaChat.components.QuotaLimitBar
 import com.yugentech.quill.ui.shared.airaChat.components.StatusBanner
 import com.yugentech.theme.tokens.AppConstants.EMPTY
 import kotlinx.coroutines.launch
@@ -68,6 +67,16 @@ fun AiraChatScreen(
 ) {
     val voiceOutputManager: VoiceOutputManager = koinInject()
     val scope = rememberCoroutineScope()
+    val speechError by voiceOutputManager.error.collectAsState()
+    speechError?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = voiceOutputManager::dismissError,
+            title = { Text("Read-aloud") }, text = { Text(message) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { scope.launch { voiceOutputManager.useAndroidVoice() } }) { Text("Use Android voice") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = voiceOutputManager::dismissError) { Text("Dismiss") } }
+        )
+    }
+
     val uiState by viewModel.uiState.collectAsState()
 
     var enforceLimitUi by remember { mutableStateOf(!uiState.canSendQuery) }
@@ -213,7 +222,7 @@ fun AiraChatScreen(
             }
 
             AnimatedContent(
-                targetState = enforceLimitUi,
+                targetState = !uiState.canSendQuery,
                 transitionSpec = {
                     fadeIn(tween(300)) togetherWith fadeOut(tween(300))
                 },
@@ -252,10 +261,7 @@ fun AiraChatScreen(
                         )
                     }
                 } else {
-                    QuotaLimitBar(
-                        isPro = uiState.isPro,
-                        onUpgradeClick = { navigateToSubscriptions() }
-                    )
+                    androidx.compose.material3.TextButton(onClick=navigateToSubscriptions) { Text("Set up AI connection") }
                 }
             }
         }

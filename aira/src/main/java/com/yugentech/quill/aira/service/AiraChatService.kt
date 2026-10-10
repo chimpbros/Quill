@@ -9,7 +9,7 @@ import com.yugentech.quill.database.dao.AiraMessageDao
 import com.yugentech.quill.database.dao.BookDao
 import com.yugentech.quill.database.entity.AiraMessageEntity
 import com.yugentech.quill.database.entity.AiraMessageRole
-import com.yugentech.quill.domain.AuthRepository
+import com.yugentech.quill.domain.LocalProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import timber.log.Timber
@@ -20,13 +20,14 @@ class AiraChatService(
     private val bookChatRepository: BookChatRepository,
     private val bookDao: BookDao,
     private val airaMessageDao: AiraMessageDao,
-    private val authRepository: AuthRepository
+    private val localProfile: LocalProfile
 ) {
 
     fun ask(bookId: String, query: String, selectedText: String? = null): Flow<AiraResponse> = flow {
         val book = bookDao.getBookEntity(bookId)!!
-        val recentHistory = airaMessageDao.getRecentMessagesForBook(bookId)
-        val userName = authRepository.currentUserName
+        val recentHistory = airaMessageDao.getMessagesForBookOnce(bookId)
+            .filter { !book.spoilerLockEnabled || (it.chapterIndex?.let { chapter -> chapter <= book.lastChapterIndex } == true) }.takeLast(6)
+        val userName = localProfile.currentUserName
 
         try {
             val intent = intentDetectionRepository.detectIntent(
@@ -65,28 +66,26 @@ class AiraChatService(
             }
 
             responseFlow.collect { response ->
-                emit(response)
                 if (response is AiraResponse.Success) {
-                    // Save User message
-                    airaMessageDao.insertMessage(
+                    airaMessageDao.insertMessages(listOf(
                         AiraMessageEntity(
                             bookId = bookId,
                             role = AiraMessageRole.USER,
-                            content = query.trim()
+                            content = query.trim(), chapterIndex = book.lastChapterIndex
                         )
-                    )
-                    // Save Aira message
-                    airaMessageDao.insertMessage(
+                    ,
                         AiraMessageEntity(
                             bookId = bookId,
                             role = AiraMessageRole.AIRA,
-                            content = response.text.trim()
+                            content = response.text.trim(), chapterIndex = book.lastChapterIndex
                         )
-                    )
+                    ))
                 }
+                emit(response)
             }
 
         } catch (e: Exception) {
+            if(e is kotlinx.coroutines.CancellationException) throw e
             emit(AiraResponse.Error(resolveErrorMessage(e)))
         }
     }
@@ -96,8 +95,8 @@ class AiraChatService(
             "The answer was too long. Please try asking for a summary."
 
         e.message?.contains("resource-exhausted") == true ->
-            "You've reached your free limit. Upgrade to Quill Pro."
+            "This provider's usage limit has been reached."
 
-        else -> "Something went wrong. Please try again."
+        else -> (e as? com.yugentech.quill.domain.ai.AiException)?.message ?: "Something went wrong. Please try again."
     }
 }

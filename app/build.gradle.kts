@@ -8,16 +8,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.services)
-    id("com.google.firebase.crashlytics")
     id("com.google.devtools.ksp")
     kotlin("plugin.serialization")
-}
-
-val localProperties = Properties()
-val localPropertiesFile: File = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localProperties.load(FileInputStream(localPropertiesFile))
 }
 
 android {
@@ -25,29 +17,34 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.yugentech.quill"
+        applicationId = "com.yugentech.quill.personal"
         minSdk = 26
         targetSdk = 37
 
-        versionCode = 13
-        versionName = "4.0.0"
+        versionCode = 14
+        versionName = "4.1.0-personal"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val webClientId = localProperties.getProperty("WEB_CLIENT_ID") ?: ""
-        buildConfigField("String", "WEB_CLIENT_ID", "\"$webClientId\"")
-
-        val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
-        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
+    signingConfigs {
+        val signingStore = providers.environmentVariable("QUILL_SIGNING_STORE_FILE").orNull
+        if (!signingStore.isNullOrBlank()) {
+            create("personal") {
+                storeFile = file(signingStore)
+                storePassword = providers.environmentVariable("QUILL_SIGNING_STORE_PASSWORD").orNull
+                keyAlias = "personal"
+                keyPassword = providers.environmentVariable("QUILL_SIGNING_KEY_PASSWORD").orNull
+                storeType = "PKCS12"
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("personal")
             isMinifyEnabled = true
             isShrinkResources = true
 
-            configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
-                mappingFileUploadEnabled = true
-            }
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -88,8 +85,6 @@ dependencies {
     implementation(project(":reader"))
     implementation(project(":domain"))
 
-    implementation(libs.firebase.functions.ktx)
-    implementation(libs.billing.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.material3)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
@@ -116,12 +111,6 @@ dependencies {
     implementation(libs.google.material)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth.ktx)
-    implementation(libs.firebase.firestore.ktx)
-    implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics)
-    implementation(libs.play.services.auth)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.animation.graphics)
@@ -139,6 +128,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation("io.ktor:ktor-client-mock:3.4.2")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -57,7 +57,6 @@ class UserViewModel(
         try {
             _uiState.update { it.copy(isSaving = true, errorMessage = null) }
             userRepository.upsertUser(userData)
-            userRepository.syncUser(userData)
             _uiState.update { it.copy(isSaving = false) }
         } catch (e: Exception) {
             Timber.e(e, "Error saving user")

@@ -1,4 +1,5 @@
 package com.yugentech.quill.reader.ui.components.aira
+import androidx.compose.material3.Text
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -42,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -71,7 +73,6 @@ import com.yugentech.quill.reader.ui.components.aira.components.AiraPeekHeader
 import com.yugentech.quill.reader.ui.components.aira.components.InputBar
 import com.yugentech.quill.reader.ui.components.aira.components.PeekDragHandle
 import com.yugentech.quill.reader.ui.components.aira.components.PeekResponseArea
-import com.yugentech.quill.reader.ui.components.aira.components.QuotaLimitBar
 import com.yugentech.quill.reader.ui.components.aira.components.resolveChips
 import com.yugentech.theme.service.HapticService
 import kotlinx.coroutines.launch
@@ -101,6 +102,16 @@ fun AiraPeekBar(
     val view = LocalView.current
     val voiceOutputManager: VoiceOutputManager = koinInject()
     val scope = rememberCoroutineScope()
+    val speechError by voiceOutputManager.error.collectAsState()
+    speechError?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = voiceOutputManager::dismissError,
+            title = { Text("Read-aloud") }, text = { Text(message) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { scope.launch { voiceOutputManager.useAndroidVoice() } }) { Text("Use Android voice") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = voiceOutputManager::dismissError) { Text("Dismiss") } }
+        )
+    }
+
     var inputText by remember { mutableStateOf("") }
 
     // Closing hides the bar and clears the response/selection upstream in the same moment, but
@@ -497,9 +508,7 @@ fun AiraPeekBar(
                                     }
                                 )
                             } else {
-                                QuotaLimitBar(
-                                    isPro = shownUiState.isPro
-                                )
+                                Text("Configure AI in More → AI Connections")
                             }
                         }
                     }

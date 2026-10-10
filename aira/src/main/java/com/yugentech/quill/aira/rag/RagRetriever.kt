@@ -18,6 +18,7 @@ class RagRetriever(
     private var cachedBookId: String? = null
     private var cachedVectors: List<ChunkVectorTuple> = emptyList()
     private val cacheMutex = Mutex()
+    suspend fun invalidate() = cacheMutex.withLock { cachedBookId=null; cachedVectors=emptyList() }
 
     suspend fun retrieve(
         bookId: String,
@@ -139,7 +140,7 @@ class RagRetriever(
         return try {
             val book = bookDao.getBookEntity(bookId)
             val maxChapterIndex = if (spoilerLockEnabled) {
-                (book?.lastChapterIndex ?: 0) + 1
+                (book?.lastChapterIndex ?: 0)
             } else {
                 Int.MAX_VALUE
             }
@@ -245,7 +246,7 @@ class RagRetriever(
         return try {
             val book = bookDao.getBookEntity(bookId)
             val maxChapterIndex = if (spoilerLockEnabled) {
-                (book?.lastChapterIndex ?: 0) + 1
+                (book?.lastChapterIndex ?: 0)
             } else {
                 Int.MAX_VALUE
             }
@@ -283,7 +284,7 @@ class RagRetriever(
             val lockedCandidates = getCandidates(bookId, book, spoilerLockEnabled) ?: return emptyList()
 
             val maxChapterIndex = if (spoilerLockEnabled) {
-                (book?.lastChapterIndex ?: 0) + 1
+                (book?.lastChapterIndex ?: 0)
             } else {
                 Int.MAX_VALUE
             }
@@ -572,9 +573,9 @@ class RagRetriever(
             if (!spoilerLockEnabled) return allChunks
 
             val progressCeiling = book?.progressPercent ?: 0f
-            if (progressCeiling == 0f) return null
+            if (progressCeiling == 0f && book?.lastReadTime == 0L && book.lastChapterTitle == null) return null
 
-            val maxChapterIndex = (book?.lastChapterIndex ?: 0) + 1
+            val maxChapterIndex = (book?.lastChapterIndex ?: 0)
             val filtered = allChunks.filter { it.chapterIndex <= maxChapterIndex }
 
             filtered.ifEmpty { null }

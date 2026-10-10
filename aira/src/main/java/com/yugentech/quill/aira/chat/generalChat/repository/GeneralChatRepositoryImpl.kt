@@ -31,17 +31,6 @@ class GeneralChatRepositoryImpl(
                 userName = userName
             )
 
-        try {
-            val rawResponse = chatService.getChatResponse(payload)
-            Timber.d("GeneralChat question=\"$question\" response: $rawResponse")
-            emit(AiraResponse.Success(text = rawResponse))
-        } catch (e: Exception) {
-            val errorMsg = when {
-                e.message?.contains("resource-exhausted") == true ->
-                    "You've reached your free limit. Upgrade to Quill Pro."
-                else -> "Something went wrong. Please try again."
-            }
-            emit(AiraResponse.Error(errorMsg))
-        }
+        chatService.getChatResponse(payload).collect { emit(it) }
     }
 }

@@ -91,18 +91,10 @@ object LicensesContent {
             author = "Android Jetpack",
             url = "https://developer.android.com/reference/androidx/webkit/package-summary"
         ),
-        LibraryOption(
-            name = "Google Play Billing",
-            author = "Google",
-            url = "https://developer.android.com/google/play/billing"
-        ),
+
 
         // Firebase
-        LibraryOption(
-            name = "Firebase",
-            author = "Google",
-            url = "https://firebase.google.com/"
-        ),
+
 
         // DI & Image Loading
         LibraryOption(

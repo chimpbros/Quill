@@ -43,11 +43,18 @@ android {
 }
 
 dependencies {
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.android)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("io.ktor:ktor-client-mock:3.4.2")
+
     implementation(project(":database"))
     implementation(project(":domain"))
 
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.firebase.functions.ktx)
     implementation(libs.onnxruntime.android)
     implementation(libs.readium.shared)
     implementation(libs.readium.streamer)

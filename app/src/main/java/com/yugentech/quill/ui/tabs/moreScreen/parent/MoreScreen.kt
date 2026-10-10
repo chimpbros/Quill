@@ -135,14 +135,7 @@ fun MoreScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.xxs),
         ) {
-            item {
-                ProfileCard(
-                    userData = userData,
-                    streakCount = streakCount,
-                    onEditProfile = onEditProfile,
-                    onViewInsights = onViewInsights
-                )
-            }
+
 
             // --- AI SECTION ---
             val aiItemCount = if (isIndexingActive) 3 else 2
@@ -158,8 +151,8 @@ fun MoreScreen(
             }
             item {
                 SettingsListItem(
-                    title = "Subscriptions",
-                    subtitle = "Manage your plan and unlock pro features",
+                    title = "AI Connections & Backups",
+                    subtitle = "Choose providers, voices, and back up your library",
                     index = 1,
                     totalCount = aiItemCount,
                     onClick = onSubscriptions,
@@ -319,7 +312,7 @@ fun MoreScreen(
                     title = "Exit",
                     subtitle = "Close the Quill app",
                     index = 0,
-                    totalCount = 2,
+                    totalCount = 1,
                     onClick = onExit,
                 )
             }

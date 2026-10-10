@@ -9,6 +9,5 @@ data class QuickUiState(
     val isLoading: Boolean = false,
     val isStreaming: Boolean = false,
     val canSendQuery: Boolean = true,
-    val showPaywall: Boolean = false,
     val error: String? = null
 )

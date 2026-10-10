@@ -17,9 +17,8 @@ val bookDetailsModule = module {
             bookDao = get(),
             chunkDao = get(),
             indexingStateDao = get(),
-            workManager = get(),
-            cloudSyncRepository = get()
-        )
+            workManager = get()
+)
     }
 
     viewModel { params ->
@@ -27,10 +26,9 @@ val bookDetailsModule = module {
             bookId = params.get(),
             airaChatRepository = get(),
             bookRepository = get(),
-            quotaRepository = get(),
-            authRepository = get(),
             workManager = get(),
-            billingRepository = get()
+            featureAccess = get(),
+            gateway = get()
         )
     }
 
@@ -38,7 +36,7 @@ val bookDetailsModule = module {
         BookDetailsViewModel(
             repository = get(),
             savedStateHandle = get(),
-            billingRepository = get()
+            featureAccess = get()
         )
     }
 

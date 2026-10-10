@@ -1,374 +1,56 @@
-<div align="center">
+# Quill Personal
 
-<img src="graphics/Feature%20Graphic.png" width="100%" alt="Quill Feature Graphic"/>
+A personal Android edition of [Quill](https://github.com/MohammadAliUstad/Quill), originally created by Mohammad Ali Ustad / Yugen Tech. Based on upstream commit `585b8e868f1febb854bfb0beb1dd2780f98a08a5`. Distributed under the existing [Apache 2.0 license](LICENSE).
 
-<br/>
+The app installs as **Quill Personal** (`com.yugentech.quill.personal`) alongside the original app. No Quill account, Firebase project, backend deployment, or Quill Pro subscription is required.
 
-<table border="0" width="100%">
-    <tr>
-        <td width="30%" align="center" valign="middle">
-            <img src="graphics/Icon.png" width="180" alt="Quill App Icon"/>
-        </td>
-        <td width="70%" valign="middle">
-            <h1>Quill</h1>
-            <h3>Read Deeper. Think Further.</h3>
-            <p><i>An intelligent EPUB reading companion that doesn't just hold your books, it understands them.</i></p>
-        </td>
-    </tr>
-</table>
+## Reading and AI
 
-<p align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.yugentech.quill"><img alt="Get it on Google Play" src="badges/playstore.png" width="200"/></a>
-  <a href="https://github.com/MohammadAliUstad/Quill/releases"><img alt="Get it on Github" src="badges/github.png" width="200"/></a>
-</p>
+Readium EPUB reading, local imports, Gutenberg and Standard Ebooks discovery, highlights, categories, reading positions, themes, soundscapes, reminders, and insights are retained. Books, conversations, illustrations, and indexes stay in local app storage.
 
-<br/>
+Configure connections in **More → AI Connections & Backups**. Text and images have independent provider/model selections.
 
-[Report Bug](https://github.com/MohammadAliUstad/Quill/issues) · [Request Feature](https://github.com/MohammadAliUstad/Quill/issues) · [Download Latest Release](https://github.com/MohammadAliUstad/Quill/releases)
+| Connection | Text and quick actions | Scene images | Read-aloud |
+|---|---|---|---|
+| OpenRouter API key | Yes | Image-capable models | — |
+| Gemini API key | Yes | Native image models | — |
+| OpenAI API key | Yes | Image API models | Optional cloud speech |
+| ChatGPT OAuth | Eligible account models | Unsupported by this route | Unsupported by this route |
+| Android text-to-speech | — | — | Default |
 
-</div>
+API keys are entered in-app and encrypted using Android Keystore. Never add keys to source code or Gradle properties. Credentials and OAuth registration records are excluded from backups.
 
----
+Text connections support model discovery, manual model IDs for API accounts, and a small connection test. Set the model's context window accurately; the app conservatively trims old conversation history and reports oversized chapter input instead of silently truncating the chapter. No connection is selected automatically, and the app never switches to a different account or billing method after an error.
 
-## Table of Contents
+The local `bge-small-en-v1.5` ONNX model and hybrid semantic/FTS retrieval are retained. Spoiler locking uses the current chapter, including the rest of that chapter, and excludes later-chapter conversations from requests. Whole-chapter summaries retain the original behavior. Prompt grounding also instructs models not to reveal information from their prior knowledge; a generative model cannot provide an absolute no-spoiler guarantee.
 
-- [Overview](#overview)
-- [What's New in 4.0](#-whats-new-in-40)
-- [Key Features](#-key-features)
-- [Screenshots](#-screenshots)
-- [How Aira Works](#how-aira-works)
-- [Technical Architecture](#technical-architecture)
-- [Setup & Installation](#setup--installation)
-- [Contributing](#-contributing)
-- [License](#-license)
-- [Contact & Support](#contact--support)
+## ChatGPT subscription access
 
----
+**Continue with ChatGPT** uses the [official open-source OAuth flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in): a system browser, loopback callback, PKCE, verified identity tokens, protected token storage, and serialized refresh. Inference uses the public Responses API with `store:false`, streaming, and explicit conversation history. It does not use ChatGPT private backend endpoints or a desktop bridge.
 
-## Overview
+Account eligibility, available models, and usage limits are controlled by OpenAI. API keys and subscription tokens are separate connections. Current subscription-route restrictions exclude image generation and speech; see the [official limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
 
-Quill reimagines what a reading app can be. It pairs a carefully crafted EPUB reader with **Aira**, an AI reading companion that reads along with you. Aira answers questions about your book straight from its pages, explains difficult passages, helps you keep track of characters, and can even paint a scene you're reading, all without ever spoiling what comes next.
+Live inference and real account authorization must be confirmed with credentials entered by the app's owner. See [validation results](docs/VALIDATION.md) for the distinction between local protocol tests and live-provider validation.
 
-Bring your own EPUBs or pick from thousands of free classics on **Project Gutenberg** and **Standard Ebooks**, set the mood with ambient soundscapes, and build a steady reading habit with reminders and insights.
+## Backups
 
----
+Export a complete ZIP using the Android file picker. It contains EPUBs, available local covers, categories, reading positions, highlights, chats, generated illustrations and passage links, reading sessions, profile, and settings. It excludes credentials, OAuth registrations, temporary audio, caches, and embedding indexes.
 
-## 🆕 What's New in 4.0
+Backups are not password encrypted. Restore validates format, schema, paths, file sizes and SHA-256 hashes, then replaces the library after confirmation. Settings are restored through their storage APIs. A recovery journal protects the prior library if import fails or is interrupted. Indexes are rebuilt afterward; existing destination credentials remain untouched. The first backup format targets database version 4.
 
-- **Meet the New Aira:** rebuilt from the ground up. Aira knows whether you're asking about your book or anything else, answers straight from the pages you've read, never spoils what's ahead, and can read her answers aloud.
-- **Ask Aira From the Page:** select any word or passage while reading to define words, explain tricky lines, or find out why a moment matters, without leaving the book.
-- **Character Companion:** select a character's name to recall who they are, see what they're up to lately, or trace their whole journey so far. Always spoiler-free.
-- **Visualize Scenes:** turn any passage into a painted illustration, kept in a Visuals gallery that takes you right back to the passage it came from.
-- **Highlights:** a smoother way to select text, plus highlights you can revisit from one place and jump straight back to.
-- **A Reimagined Reader:** new reading settings, a cleaner table of contents, a warm night light, and page turning with your volume keys.
-- **Ambient Sounds:** six soundscapes, from gentle rain to a crackling fireplace. Preview them before you play, or have them start automatically when you open a book.
-- **Reading Reminders:** a daily reminder at the time you pick, or playful nudges to keep your streak going.
-- **Discover & Organize:** a redesigned Discover tab, better Project Gutenberg and Standard Ebooks browsing, a quick way to add your own books, and categories you can reorder by dragging.
-- **Reading Insights:** reading time, streak, peak reading hours, favorite authors, and how you read with Aira, all on a refreshed Insights screen.
-- **A Fresh Look:** a brand new app icon and splash screen, the new Harbor color theme, and a polished feel across the whole app.
+Notifications are opt-in through More settings. Denying permission never blocks reading.
 
----
+## Build and install
 
-## ✨ Key Features
+See [build instructions](docs/BUILD.md). The project uses Kotlin, Compose, Room, Ktor, Readium, and ONNX Runtime. The pinned Gradle daemon requires Java 21 and the project compiles against Android SDK 37. Android 8.0/API 26 remains the minimum.
 
-### Aira, Your AI Reading Companion
-
-- **Grounded in the text:** Aira answers from the actual passages of your book, retrieved on-device, not from guesswork.
-- **Spoiler lock:** her knowledge is locked to your reading progress. She never reveals events from chapters you haven't reached.
-- **Smart routing:** Aira works out whether you're asking about your book or about something general, and answers each the right way.
-- **Full conversations:** chat naturally about the plot, characters, themes, or world-building. History is kept per book, with a clear current-chapter header.
-- **Read aloud:** listen to any of Aira's answers, spoken with natural-sounding text-to-speech.
-
-### Ask Aira From the Page
-
-Select text while reading and the Aira peek bar offers quick actions based on what you picked:
-
-| You select | Quick actions |
-|---|---|
-| Nothing | Summarize chapter · Who are the characters? · What are the themes? |
-| A word | Define · What is this? |
-| A name | **Who is this?** · **Recent Role** · **Journey So Far** |
-| A short phrase | Explain this |
-| A passage | Explain this · What's the significance? · **Visualize this** |
-
-- **Character companion:** recall who a character is, see what they're up to lately, or trace their whole journey through the story so far.
-- **Chapter summaries** are built from the full chapter text, and theme questions consider the current chapter alongside the rest of what you've read.
-- Answers type out smoothly, and if you select something that isn't a character's name, Aira kindly tells you so.
-
-### Visualize Scenes
-
-- Turn any descriptive passage into a **painted, oil-style illustration**.
-- Every image is saved to a per-book **Visuals gallery**.
-- **Go to Passage** jumps straight back to the exact spot in the book the image came from.
-
-### The Reader
-
-- **Readium-powered EPUB engine** with smooth chapter navigation and accurate progress tracking.
-- **Reading settings:** fonts, text size, spacing, page themes, and paged or scrolling layout.
-- **Custom text selection and highlights,** with a Highlights screen to revisit every highlight and jump back to it.
-- **Table of contents** sheet, progress slider, and resume-where-you-left-off.
-- **Night light:** a warm amber tint for comfortable late-night reading.
-- **Volume-key page turning.**
-
-### Ambient Sounds
-
-- Six soundscapes: **Forest, Rain, Brown Noise, Fireplace, Library, Riverside**.
-- Preview sounds before playing, start and stop from the reader overlay, and optionally **auto-play on open**. Volume follows your device's own volume controls.
-- Seamless looping with crossfades.
-
-### Library & Sources
-
-- **Import your own EPUBs** from anywhere on your device.
-- **Project Gutenberg:** browse, search, and download 60,000+ free books.
-- **Standard Ebooks:** carefully formatted, high-quality public domain editions.
-- **Discover** tab with a hero carousel and curated shelves.
-- **Categories:** organize books your way, with drag-and-drop reordering.
-- **Storage management:** see how much space each book uses and clean up.
-
-### Habits & Insights
-
-- **Reading insights:** time read, day streak, books finished, a reading heatmap, peak reading hours, favorite authors, library progress, and your Aira activity.
-- **Daily reading reminder** at a time you choose, plus optional **playful reminders** to keep your streak alive.
-
-### Personalization & Account
-
-- Multiple **color themes** (including Harbor), light and dark modes, **AMOLED black**, and dynamic color.
-- **Cloud sync** of your library and categories across devices via Firebase.
-- Profile with display name and avatar.
-
-### Quill Pro
-
-| | Basic Reader | Quill Pro |
-|---|---|---|
-| Full reader, sources, sounds, highlights, insights | ✅ | ✅ |
-| Daily Aira queries | 5 | 50 |
-| Visualize (3 queries per image) | ✅ | ✅ |
-
-Quotas reset daily. Subscriptions are handled through Google Play Billing.
-
----
-
-## 📱 Screenshots
-
-<div align="center">
-
-<table width="100%">
-  <tr>
-    <td align="center" width="25%">
-      <img src="screenshots/Library.png" alt="Library" width="100%"/>
-      <br/><sub><b>Library</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Discover.png" alt="Discover" width="100%"/>
-      <br/><sub><b>Discover</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Details.png" alt="Book Details" width="100%"/>
-      <br/><sub><b>Book Details</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Reader.jpg" alt="Reader" width="100%"/>
-      <br/><sub><b>Reader</b></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="25%">
-      <img src="screenshots/AI.png" alt="Ask Aira From the Page" width="100%"/>
-      <br/><sub><b>Ask Aira From the Page</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Aira.png" alt="Aira Chat" width="100%"/>
-      <br/><sub><b>Aira Chat</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Settings.png" alt="Reading Settings" width="100%"/>
-      <br/><sub><b>Reading Settings</b></sub>
-    </td>
-    <td align="center" width="25%">
-      <img src="screenshots/Insights.png" alt="Insights" width="100%"/>
-      <br/><sub><b>Insights</b></sub>
-    </td>
-  </tr>
-</table>
-
-</div>
-
----
-
-## How Aira Works
-
-Aira combines **on-device retrieval** with **server-side generation**. Your book is indexed on the phone; only the handful of relevant passages for a given question are sent to the model.
-
-### 1. On-device indexing
-
-When a book is added, a background worker (WorkManager) processes it:
-
-1. The EPUB is split into chunks of about 1,500 characters with a 250-character overlap.
-2. Each chunk is embedded with **BAAI/bge-small-en-v1.5**, running locally through **ONNX Runtime**.
-3. Chunks and their embeddings are stored in **Room**, with an **FTS4** full-text index alongside.
-
-### 2. Retrieval
-
-- **Hybrid search:** semantic vector similarity and FTS4 keyword matching, merged with **Reciprocal Rank Fusion**.
-- **Spoiler lock:** retrieval is capped at the reader's current chapter, so passages from unread chapters are never sent.
-- **Action-specific strategies** for the character tools:
-  - **Who is this?** takes the character's first mentions verbatim, then spreads picks evenly across your reading progress in zones, ranked by how much each passage actually describes them (personality, role, relationships, appearance).
-  - **Recent Role** uses their latest appearances.
-  - **Journey So Far** splits their arc 20/60/20: their introduction, a scattered and semantically ranked middle, and their most recent scenes.
-  - Overlapping duplicate chunks are removed, and a per-chapter cap stops any single chapter from dominating.
-- **Chapter summaries** read the chapter straight from the EPUB rather than stitching overlapping chunks back together.
-
-### 3. Generation
-
-Retrieved passages and a task-specific prompt go to **Firebase Cloud Functions**, which call Google's models:
-
-| Task | Model / Service |
-|---|---|
-| Chat, quick actions, intent routing | Gemini 2.5 Flash-Lite |
-| Visualize (illustrations) | Gemini 2.5 Flash Image |
-| Read aloud | Google Cloud Text-to-Speech |
-
-Prompts enforce strict grounding and attribution: Aira states only what the passages show, never borrows a detail from a different character, and stays spoiler-free.
-
----
-
-## Technical Architecture
-
-Quill uses a multi-module MVVM + Clean Architecture setup.
-
-```text
-Quill/
-├── app/        Main app: navigation, library, sources, Aira chat, insights, settings,
-│               notifications, billing & quota, cloud sync, onboarding
-├── reader/     Readium-based EPUB reader: engine, overlay, settings, highlights,
-│               ambient sounds, Aira peek bar
-├── aira/       AI layer: RAG retriever, ONNX embeddings, chunking, intent detection,
-│               book / general / quick chat services, voice output
-├── database/   Room database, DAOs, entities, FTS4 index, migrations
-├── domain/     Shared models and repository interfaces
-├── theme/      Design system: color schemes, typography, design tokens, haptics
-└── functions/  Firebase Cloud Functions (TypeScript): bookChat, generalChat, quickChat,
-                detectIntent, visualizeScene, speakText
+```powershell
+./tools/build-personal.ps1
+./tools/build-personal.ps1 -SignedRelease
 ```
 
-### Tech Stack
+The signed build is copied to `artifacts/quill-personal.apk`. Copy it to your Android device and install it. Keep `.private/signing/` securely: the signing key is needed for future updates that preserve app data. Runtime downloads, signing material, APKs, and local configuration are ignored by Git.
 
-```text
-Language:             Kotlin 2.3
-UI:                   Jetpack Compose, Material 3 Expressive, Haze (blur), Coil
-Architecture:         MVVM + Clean Architecture (multi-module)
-Dependency Injection: Koin
-EPUB Engine:          Readium Kotlin Toolkit
-Local Storage:        Room (+ FTS4), DataStore
-Background Work:      WorkManager, AlarmManager
-Audio:                Media3 ExoPlayer
-Embeddings:           BAAI/bge-small-en-v1.5 via ONNX Runtime (on-device)
-AI Models:            Gemini 2.5 Flash-Lite, Gemini 2.5 Flash Image
-Speech:               Google Cloud Text-to-Speech
-Networking:           Ktor (Gutendex API, Standard Ebooks OPDS)
-Backend:              Firebase Auth, Firestore, Cloud Functions, Crashlytics, Analytics
-Payments:             Google Play Billing
-Concurrency:          Kotlin Coroutines & Flow
-Min / Target SDK:     26 / 37
-```
+## Attribution
 
----
-
-## Setup & Installation
-
-### Prerequisites
-
-- Android Studio (latest stable recommended)
-- JDK 17 or higher
-- Android SDK with API 37 installed (the app runs on API 26+)
-- Node.js 24 and the Firebase CLI (for Cloud Functions)
-- A Firebase project on the **Blaze** plan (required for Cloud Functions and outbound API calls)
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/MohammadAliUstad/Quill.git
-cd Quill
-```
-
-### 2. Configure Firebase
-
-1. Create a project in the [Firebase Console](https://console.firebase.google.com/).
-2. Add an Android app with the package name `com.yugentech.quill`.
-3. Download `google-services.json` and place it in the `app/` directory.
-4. Enable **Authentication**, **Firestore**, and **Crashlytics**.
-
-### 3. Deploy the Cloud Functions
-
-```bash
-cd functions
-npm install
-
-# Gemini API key used by the chat, intent, and Visualize functions
-firebase functions:secrets:set GEMINI_API_KEY
-
-firebase deploy --only functions
-```
-
-For **read aloud**, enable the **Cloud Text-to-Speech API** in the Google Cloud project linked to Firebase.
-
-### 4. Add the embedding model
-
-Place the ONNX export of `bge-small-en-v1.5` and its tokenizer in the `aira` module's assets:
-
-```text
-aira/src/main/assets/model.onnx
-aira/src/main/assets/tokenizer.json
-```
-
-### 5. Build & run
-
-1. Open the project in Android Studio and sync Gradle.
-2. Select a device or emulator.
-3. Click **Run ▶️**.
-
-> **Quill Pro (optional):** to test subscriptions, create a subscription with the product ID `quill_pro_monthly` in the Google Play Console.
-
----
-
-## 🤝 Contributing
-
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a pull request
-
----
-
-## 📄 License
-
-Distributed under the **Apache License 2.0**. See the [`LICENSE`](LICENSE) file for details.
-
----
-
-## Contact & Support
-
-If you run into an issue or have an idea for a future update, please open an issue on GitHub or contact the developer directly.
-
-**Developer:** Mohammad Ali Ustad
-
-**Email:** Mohammadaliustad@gmail.com
-
-**Company:** Yugen Tech
-
-<div align="center">
-
-### Show Your Support
-
-If you find this project helpful, please consider giving it a ⭐!
-
-</div>
-
----
-
-<div align="center">
-<sub>Built with ❤️ by Yugen Tech</sub>
-</div>
+Original project: **Quill**, Mohammad Ali Ustad, **Yugen Tech**. Original license and retained source attribution remain in the repository. This fork is a personal edition and is not an official release from the original developer.

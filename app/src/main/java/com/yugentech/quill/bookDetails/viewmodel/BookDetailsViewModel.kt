@@ -9,7 +9,7 @@ import com.yugentech.quill.database.converter.AppJson
 import com.yugentech.quill.database.mapper.toDomainModel
 import com.yugentech.quill.database.model.Book
 import com.yugentech.quill.database.model.DownloadStatus
-import com.yugentech.quill.domain.BillingRepository
+import com.yugentech.quill.domain.FeatureAccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 
 class BookDetailsViewModel(
     savedStateHandle: SavedStateHandle,
-    billingRepository: BillingRepository,
+    featureAccess: FeatureAccess,
     private val repository: BookDetailsRepository
 ) : ViewModel() {
 
@@ -44,7 +44,7 @@ class BookDetailsViewModel(
     val uiState: StateFlow<BookDetailsUiState> = combine(
         repository.getBook(targetBookId),
         userExpandedOverride,
-        billingRepository.isPro
+        featureAccess.indexingEnabled
     ) { dbEntity, userExpanded, isPro ->
 
         val richBook = dbEntity?.toDomainModel() ?: passedBook

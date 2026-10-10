@@ -73,10 +73,9 @@ val readerModule = module {
         QuickViewModel(
             airaChatRepository = get(),
             quickRepository = get(),
-            quotaRepository = get(),
-            authRepository = get(),
             readerRepository = get(),
-            billingRepository = get()
+            featureAccess = get(),
+            gateway = get()
         )
     }
 }

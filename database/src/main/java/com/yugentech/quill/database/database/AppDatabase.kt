@@ -12,7 +12,6 @@ import com.yugentech.quill.database.dao.CatalogDao
 import com.yugentech.quill.database.dao.CategoryCacheDao
 import com.yugentech.quill.database.dao.CategoryDao
 import com.yugentech.quill.database.dao.HighlightDao
-import com.yugentech.quill.database.dao.QuotaDao
 import com.yugentech.quill.database.dao.ReadingSessionDao
 import com.yugentech.quill.database.dao.VisualDao
 import com.yugentech.quill.database.entity.AiraMessageEntity
@@ -23,7 +22,6 @@ import com.yugentech.quill.database.entity.BookIndexingStateEntity
 import com.yugentech.quill.database.entity.CatalogCacheEntity
 import com.yugentech.quill.database.entity.CategoryCacheEntity
 import com.yugentech.quill.database.entity.CategoryEntity
-import com.yugentech.quill.database.entity.QuotaEntity
 import com.yugentech.quill.database.entity.ReadingSessionEntity
 import com.yugentech.quill.database.entity.UserEntity
 import com.yugentech.quill.database.entity.VisualEntity
@@ -42,7 +40,6 @@ import com.yugentech.quill.database.entity.HighlightEntity
         AiraMessageEntity::class,
         CategoryCacheEntity::class,
         ReadingSessionEntity::class,
-        QuotaEntity::class,
         BookIndexingStateEntity::class,
         HighlightEntity::class,
         VisualEntity::class
@@ -50,8 +47,8 @@ import com.yugentech.quill.database.entity.HighlightEntity
     views = [
         LibraryBookView::class
     ],
-    version = 3,
-    exportSchema = false
+    version = 4,
+    exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -63,7 +60,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun airaMessageDao(): AiraMessageDao
     abstract fun categoryCacheDao(): CategoryCacheDao
     abstract fun readingSessionDao(): ReadingSessionDao
-    abstract fun quotaDao(): QuotaDao
     abstract fun bookIndexingStateDao(): BookIndexingStateDao
     abstract fun highlightDao(): HighlightDao
     abstract fun visualDao(): VisualDao

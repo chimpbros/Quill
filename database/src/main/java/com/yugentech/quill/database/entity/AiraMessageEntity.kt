@@ -22,7 +22,8 @@ data class AiraMessageEntity(
     val bookId: String,
     val role: AiraMessageRole,
     val content: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val chapterIndex: Int? = null
 )
 
 enum class AiraMessageRole {

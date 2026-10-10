@@ -14,6 +14,7 @@ import com.yugentech.quill.database.entity.BookEntity
 import com.yugentech.quill.database.model.RetrievedChunk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import org.json.JSONObject
 import timber.log.Timber
 
@@ -45,38 +46,10 @@ class BookChatRepositoryImpl(
                 userName = userName
             )
 
-        try {
-            val rawResponse = chatService.bookChat(payload)
-            Timber.d("BookChat[${route.intent}] question=\"$question\" response: $rawResponse")
-
-            try {
-                val cleaned = rawResponse
-                    .replace("```json", "", ignoreCase = true)
-                    .replace("```", "")
-                    .trim()
-
-                val startIndex = cleaned.indexOf('{')
-                val endIndex = cleaned.lastIndexOf('}')
-
-                if (startIndex == -1 || endIndex == -1) {
-                    emit(AiraResponse.Success(text = rawResponse))
-                    return@flow
-                }
-
-                val json = JSONObject(cleaned.substring(startIndex, endIndex + 1))
-                val answer = json.getString("answer")
-
-                emit(AiraResponse.Success(text = answer))
-            } catch (e: Exception) {
-                emit(AiraResponse.Success(text = rawResponse))
-            }
-        } catch (e: Exception) {
-            val errorMsg = when {
-                e.message?.contains("resource-exhausted") == true ->
-                    "You've reached your free limit. Upgrade to Quill Pro."
-                else -> "Something went wrong. Please try again."
-            }
-            emit(AiraResponse.Error(errorMsg))
+        if(contextBlock.isBlank()) {
+            emit(AiraResponse.Success("I could not find relevant passages within your reading progress. Try a more specific question."))
+        } else {
+            emitAll(chatService.bookChat(payload))
         }
     }
 

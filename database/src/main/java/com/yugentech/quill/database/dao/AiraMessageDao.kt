@@ -18,6 +18,8 @@ interface AiraMessageDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: AiraMessageEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessages(messages: List<AiraMessageEntity>)
 
     @Query("SELECT * FROM aira_messages WHERE bookId = :bookId ORDER BY timestamp ASC")
     fun getMessagesForBook(bookId: String): Flow<List<AiraMessageEntity>>
@@ -27,9 +29,9 @@ interface AiraMessageDao {
 
     @Query("""
     SELECT * FROM (
-        SELECT * FROM aira_messages 
-        WHERE bookId = :bookId 
-        ORDER BY timestamp DESC 
+        SELECT * FROM aira_messages
+        WHERE bookId = :bookId
+        ORDER BY timestamp DESC
         LIMIT 6
     ) ORDER BY timestamp ASC
 """)
