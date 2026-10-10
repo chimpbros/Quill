@@ -15,6 +15,8 @@ The upstream build reached Android compilation but failed because its required `
 - A signed, optimized release APK is built with a stable private signing key stored outside Git.
 - The resolved release dependency graph contains no Firebase, Google authentication, Billing, Analytics, or Crashlytics libraries. Cloud sync services and workers were removed. Android automatic backup is disabled; backups are explicit ZIP exports.
 - Standard emulator visual checks covered login-free library launch, EPUB file-picker import, rendered Readium pages, persisted library/continue-reading after restart, and AI settings with unconfigured controls disabled. Screenshots are saved locally under `artifacts/qa/`.
+- Chapter navigation and restart passed: chapter two remained at page 4 of 7 (42%), and Continue reopened the second chapter. A temporary reader ANR occurred while Gradle/R8 competed with the emulator on this 8 GB host; the reader rendered normally after the build completed. Device performance has not been profiled.
+- The signed release installed successfully and opened directly into an empty library without login. Android package inspection confirms `com.yugentech.quill.personal`, version `4.1.0-personal` (14), minimum API 26, and target API 37.
 - Reminder notification delivery passed after the owner explicitly authorized notification permission on the emulator. The test verifies that the app's notification appears; daily alarm timing and reboot rescheduling remain unverified.
 
 Native OAuth tests mock the remote identity provider while exercising actual Android cryptography and loopback sockets. They do not establish account eligibility or live authorization.
@@ -28,3 +30,11 @@ Native OAuth tests mock the remote identity provider while exercising actual And
 - Backup crash recovery is tested through a persisted interrupted-operation journal; power loss during individual filesystem writes is not emulated.
 
 Credentials must be entered in-app by the owner. No credentials were borrowed from this desktop's Codex session or embedded in the source.
+
+## Delivered APK
+
+File: `artifacts/quill-personal.apk` (149,051,222 bytes). APK signature verification passed using APK Signature Scheme v2, RSA 3072.
+
+SHA-256: `5f657bf69ad54b37d03d81e074971191960d2c830e05a0d073c2a2b5c83319d0`.
+
+Signing certificate SHA-256: `80054e1fbd0114e8aa308fc6e7b68620f94d938fdf86a96a2b85e4e465e621ac`. The private signing material remains in the ignored local `.private/signing/` directory for future updates.
