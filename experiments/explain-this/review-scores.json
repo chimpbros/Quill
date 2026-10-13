@@ -1,0 +1,396 @@
+{
+  "runDirectory": "artifacts/prompt-eval/live-2026-10-11T03-31-12-698Z",
+  "reviewMethod": "Single Codex reviewer, with variant labels hidden during scoring. The reviewer also authored the candidate, so this is exploratory subjective review, not independent or statistical validation.",
+  "rubric": {
+    "meaning": "2: faithful core meaning; 1: core meaning with a misleading or unsupported detail; 0: wrong",
+    "clarity": "2: accessible; 1: partly unclear; 0: opaque",
+    "unpacking": "2: explains the key confusing expression/image and causal relationship where relevant; 1: mostly paraphrases, omits key difficult wording, or leaves uncertainty implicit; 0: does not explain",
+    "tone": "2: natural and patient; 1: awkward or inappropriate; 0: seriously unsuitable"
+  },
+  "scores": [
+    {
+      "label": "Answer 1",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 2",
+      "meaning": 1,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": "Unsupported genetic-source explanation: borrowed DNA from many sources is not established by the supplied passage."
+    },
+    {
+      "label": "Answer 3",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 4",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 5",
+      "meaning": 1,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": "Adds speculative repetition/contamination explanations not established by the supplied passage."
+    },
+    {
+      "label": "Answer 6",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 7",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 8",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 9",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 10",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 11",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 12",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 13",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 14",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 15",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 16",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 17",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 18",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 19",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 20",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 21",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 22",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 23",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 24",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 25",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 26",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 27",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 28",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 29",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 30",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 31",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 32",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 33",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 34",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 35",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 36",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 37",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 38",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 39",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 40",
+      "meaning": 1,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": "States fear as certain where the short passage leaves her motive ambiguous."
+    },
+    {
+      "label": "Answer 41",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 42",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 43",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 44",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 45",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 46",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 47",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 2,
+      "tone": 2,
+      "flag": null
+    },
+    {
+      "label": "Answer 48",
+      "meaning": 2,
+      "clarity": 2,
+      "unpacking": 1,
+      "tone": 2,
+      "flag": null
+    }
+  ]
+}

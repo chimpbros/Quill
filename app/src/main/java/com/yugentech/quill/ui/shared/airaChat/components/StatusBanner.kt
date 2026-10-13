@@ -35,8 +35,8 @@ fun StatusBanner(
         isIndexing -> Triple(
             MaterialTheme.colorScheme.secondaryContainer,
             MaterialTheme.colorScheme.onSecondaryContainer,
-            if (indexingProgress > 0) "Aira is reading this book... $indexingProgress%"
-            else "Aira is reading this book..."
+            if (indexingProgress > 0) "Book indexing: $indexingProgress%. You can chat now."
+            else "Book indexing in progress. You can chat now."
         )
 
         error != null -> Triple(

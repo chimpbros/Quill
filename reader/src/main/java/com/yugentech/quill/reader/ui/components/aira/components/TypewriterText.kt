@@ -34,7 +34,9 @@ fun TypewriterText(
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
-    onTypingStateChange: (Boolean) -> Unit = {}
+    onTypingStateChange: (Boolean) -> Unit = {},
+    sources: List<com.yugentech.quill.aira.context.SourceExcerpt> = emptyList(),
+    onSourceClick: (com.yugentech.quill.aira.context.SourceExcerpt) -> Unit = {}
 ) {
     val cleanText = remember(text) { text.stripMarkdown() }
 
@@ -62,8 +64,24 @@ fun TypewriterText(
         }
     }
 
+    val visibleText = cleanText.substring(0, revealedChars.value.toInt().coerceAtMost(cleanText.length))
+    val linkedText = androidx.compose.ui.text.buildAnnotatedString {
+        var from = 0
+        for (match in Regex("\\[S[0-9]+\\]").findAll(visibleText)) {
+            append(visibleText.substring(from, match.range.first))
+            val source = sources.firstOrNull { it.id == match.value.trim('[', ']') }
+            if (source != null) pushLink(androidx.compose.ui.text.LinkAnnotation.Clickable(source.id,
+                styles = androidx.compose.ui.text.TextLinkStyles(style = androidx.compose.ui.text.SpanStyle(
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)),
+                linkInteractionListener = { onSourceClick(source) }))
+            append(match.value)
+            if (source != null) pop()
+            from = match.range.last + 1
+        }
+        append(visibleText.substring(from))
+    }
     Text(
-        text = cleanText.substring(0, revealedChars.value.toInt().coerceAtMost(cleanText.length)),
+        text = linkedText,
         style = style,
         color = color,
         modifier = modifier

@@ -21,8 +21,8 @@ android {
         minSdk = 26
         targetSdk = 37
 
-        versionCode = 14
-        versionName = "4.1.0-personal"
+        versionCode = 20
+        versionName = "4.4.0-personal"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     }
@@ -130,6 +130,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation("io.ktor:ktor-client-mock:3.4.2")
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.readium.navigator)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)

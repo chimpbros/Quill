@@ -1,4 +1,5 @@
 package com.yugentech.quill.reader.ui.components.engine
+import com.yugentech.quill.aira.rag.locatorAtHref
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +38,9 @@ import com.yugentech.theme.service.HapticService
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -65,6 +70,7 @@ private const val TOOLBAR_HEIGHT_DP = 66f
 fun ReadiumEngine(
     modifier: Modifier = Modifier,
     publication: Publication,
+    structure: com.yugentech.quill.aira.rag.PublicationStructure? = null,
     bookId: String,
     isPro: Boolean = false,
     initialLocation: Locator?,
@@ -79,6 +85,9 @@ fun ReadiumEngine(
     onTap: () -> Unit,
     onAskAira: (String, Locator?) -> Unit = { _, _ -> },
     onSelectionAction: (Locator) -> Unit = {},
+    rangeActionLabel: String = "Start here",
+    hasRangeDraft: Boolean = false,
+    onRangeSelection: (Locator) -> Unit = {},
     onDecorationTapped: (Decoration) -> Unit = {},
     onJumpComplete: () -> Unit,
     onSeekComplete: () -> Unit,
@@ -110,6 +119,7 @@ fun ReadiumEngine(
 
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
     val scope = rememberCoroutineScope()
+    val rangeDraftActive by rememberUpdatedState(hasRangeDraft)
 
     suspend fun clearSelection() {
         val nav = navigator ?: return
@@ -168,7 +178,16 @@ fun ReadiumEngine(
                 .replace(Regex("\\s+"), " ")
                 .trim()
             val rects = obj.optJSONArray("rects")
-            val locator = nav.currentSelection()?.locator
+            val original = nav.currentSelection()?.locator ?: nav.currentLocator.value
+            val dom = obj.optJSONObject("domRange")
+            val resource = structure?.resources?.firstOrNull {
+                obj.optString("resource").endsWith(com.yugentech.quill.aira.rag.PublicationStructure.normalizeHref(it))
+            }
+            val base = if (resource != null) original.copy(href = Url(resource)!!) else original
+            val locator = if (dom != null) Locator.fromJSON(base.toJSON().apply {
+                getJSONObject("locations").put("domRange", dom)
+                put("text", (optJSONObject("text") ?: JSONObject()).put("highlight", obj.optString("text")))
+            }) else base
 
             if (rects != null && rects.length() > 0 && text.isNotEmpty()) {
                 val first = rects.getJSONObject(0)
@@ -272,6 +291,8 @@ fun ReadiumEngine(
         ) {
             exitSelection?.let { sel ->
                 SelectionToolbar(
+                    rangeActionLabel = rangeActionLabel,
+                    onRangeSelection = { sel.locator?.let(onRangeSelection); scope.launch { clearSelection() } },
                     selectionInfo = sel,
                     isAiraReady = isAiraReady,
                     hazeState = hazeState,
@@ -303,7 +324,11 @@ fun ReadiumEngine(
 
     LaunchedEffect(decorations, navigator) {
         val decorableNav = navigator as? DecorableNavigator
-        decorableNav?.applyDecorations(decorations, "user_highlights")
+        // Readium resumes after preparing decoration changes on a worker. Its WebView
+        // updates must return to the Android UI dispatcher, including under test clocks.
+        withContext(Dispatchers.Main.immediate) {
+            decorableNav?.applyDecorations(decorations, "user_highlights")
+        }
     }
 
     LaunchedEffect(commands, navigator) {
@@ -312,6 +337,28 @@ fun ReadiumEngine(
             when (command) {
                 ReaderCommand.NextPage -> nav.goForward(animated = true)
                 ReaderCommand.PreviousPage -> nav.goBackward(animated = true)
+            }
+        }
+    }
+
+    LaunchedEffect(navigator, initialLocation) {
+        val nav = navigator ?: return@LaunchedEffect
+        val initial = initialLocation ?: return@LaunchedEffect
+        // Saved readings and excerpt/range jumps already carry exact text locations.
+        // Only fragment-only chapter anchors need this additional font-layout retry.
+        if (initial.locations.fragments.isEmpty() || initial.text.highlight != null) return@LaunchedEffect
+        // A bundled font can reflow columns after Readium's initial fragment jump.
+        // Restore the exact locator once the initial resource and its fonts are ready.
+        withContext(Dispatchers.Main.immediate) {
+            val resource = com.yugentech.quill.aira.rag.PublicationStructure.normalizeHref(initial.href.toString())
+            val ready = withTimeoutOrNull(5000) {
+                while (!nav.isResumed || nav.evaluateJavascript("decodeURIComponent(location.pathname).endsWith(${JSONObject.quote(resource)}) && (!document.fonts || document.fonts.status === 'loaded')") != "true") delay(100)
+                delay(100) // Let the font's final column layout reach Readium.
+                true
+            } == true
+            if (ready && !rangeDraftActive && selectionInfo == null && nav.currentSelection() == null &&
+                com.yugentech.quill.aira.rag.PublicationStructure.normalizeHref(nav.currentLocator.value.href.toString()) == resource) {
+                nav.go(initial, animated = false)
             }
         }
     }
@@ -366,13 +413,7 @@ fun ReadiumEngine(
     LaunchedEffect(targetJumpHref, navigator) {
         val nav = navigator ?: return@LaunchedEffect
         targetJumpHref?.let { href ->
-            Url(href)?.let { url ->
-                publication.linkWithHref(url)?.let { link ->
-                    publication.locatorFromLink(link)?.let { loc ->
-                        nav.go(loc, animated = false)
-                    }
-                }
-            }
+            publication.locatorAtHref(href)?.let { nav.go(it, animated = false) }
             onJumpComplete()
         }
     }
@@ -428,7 +469,9 @@ fun ReadiumEngine(
                                 } catch(e) {}
                             }
                             if (filteredRects.length > 0) {
-                                var liveData = JSON.stringify({ text: sel.toString(), rects: filteredRects });
+                                var liveData = JSON.stringify({ text: sel.toString(), rects: filteredRects,
+                                    domRange: window.__quillCaptureDomRange ? window.__quillCaptureDomRange(range) : null,
+                                    resource: decodeURIComponent(location.pathname) });
                                 window.__quillSelData = liveData;
                                 return liveData;
                             }
@@ -442,7 +485,10 @@ fun ReadiumEngine(
                 """.trimIndent())
             } catch (_: Exception) { null }
 
-            val processedJson = json?.removeSurrounding("\"")?.replace("\\\"", "\"")
+            val processedJson = json?.let { value ->
+                if (value.startsWith('"')) runCatching { org.json.JSONTokener(value).nextValue() as? String }.getOrNull()
+                else value
+            }
 
             if (isClearingSelection) {
                 // Ignore poll results while a manual clear is in progress
@@ -533,6 +579,37 @@ fun ReadiumEngine(
                         }
                     })();
 
+                    window.__quillCaptureDomRange = function(range) {
+                        function path(element) {
+                            if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(element.id) && document.querySelectorAll('#' + element.id).length === 1) return '#' + element.id;
+                            var parts = [];
+                            while (element && element.nodeType === 1) {
+                                var tag = element.localName, index = 1, sibling = element.previousElementSibling;
+                                while (sibling) { if (sibling.localName === tag) index++; sibling = sibling.previousElementSibling; }
+                                parts.unshift(tag + ':nth-of-type(' + index + ')');
+                                if (tag === 'body') break;
+                                element = element.parentElement;
+                            }
+                            return parts.join(' > ');
+                        }
+                        function point(node, offset, end) {
+                            if (node.nodeType !== 3) {
+                                var child = node.childNodes[end ? offset - 1 : offset];
+                                if (!child) return null;
+                                if (child.nodeType === 3) { node = child; offset = end ? child.length : 0; }
+                                else {
+                                    var walker = document.createTreeWalker(child, NodeFilter.SHOW_TEXT), found = walker.nextNode(), last = found;
+                                    if (end) { while (found) { last = found; found = walker.nextNode(); } found = last; }
+                                    if (!found) return null;
+                                    node = found; offset = end ? found.length : 0;
+                                }
+                            }
+                            var parent = node.parentElement;
+                            return {cssSelector:path(parent), textNodeIndex:Array.from(parent.childNodes).filter(function(n){return n.nodeType === 3;}).indexOf(node), charOffset:offset};
+                        }
+                        var start = point(range.startContainer, range.startOffset, false), end = point(range.endContainer, range.endOffset, true);
+                        return start && end ? {start:start, end:end} : null;
+                    };
                     if (window.__quillScrollLockInstalled) return;
                     window.__quillScrollLockInstalled = true;
                     window.__quillSelectionActive = false;
@@ -617,7 +694,8 @@ fun ReadiumEngine(
                                     if (cfRect2.height > 0) capVis.push({top: cfRect2.top, bottom: cfRect2.bottom, left: cfRect2.left, right: cfRect2.right});
                                 }
                                 if (capVis.length > 0) {
-                                    window.__quillSelData = {text: sel.toString(), rects: capVis};
+                                    window.__quillSelData = {text: sel.toString(), rects: capVis,
+                                        domRange: window.__quillCaptureDomRange(capRange), resource: decodeURIComponent(location.pathname)};
                                 }
                             } catch(capErr) {}
                         }
@@ -642,7 +720,8 @@ fun ReadiumEngine(
             nav.currentLocator.collectLatest { locator ->
                 injectSelectionStyles()
                 injectSelectionHandler()
-                onLocatorChange(locator)
+                delay(120)
+                onLocatorChange(structure?.let { ReaderLocatorTracker.capture(nav, locator, it) } ?: locator)
             }
         }
     }

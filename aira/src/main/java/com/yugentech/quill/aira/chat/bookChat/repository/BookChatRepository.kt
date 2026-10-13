@@ -13,6 +13,7 @@ interface BookChatRepository {
         history: List<AiraMessageEntity>,
         book: BookEntity,
         selectedText: String? = null,
-        userName: String? = null
+        userName: String? = null,
+        request: com.yugentech.quill.aira.context.ReaderRequestContext = com.yugentech.quill.aira.context.ReaderRequestContext()
     ): Flow<AiraResponse>
 }

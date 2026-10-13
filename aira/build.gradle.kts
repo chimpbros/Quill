@@ -43,6 +43,7 @@ android {
 }
 
 dependencies {
+    implementation("org.jsoup:jsoup:1.18.1")
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.content.negotiation)

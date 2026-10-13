@@ -22,12 +22,19 @@ class GroundingTest {
   assertEquals("Alice",result.characterName);assertEquals(QueryIntent.CHARACTER_PROFILE,result.intent);assertTrue(result.isChapterScoped)
  }
  @Test fun oldHistoryIsTrimmedBeforeCurrentEvidence() {
-  val request=TextRequest("Grounding",listOf(AiMessage("user","x".repeat(12000)),AiMessage("assistant","y".repeat(1000)),AiMessage("user","Current evidence and question")))
+  val request=TextRequest("Grounding",listOf(AiMessage("user","x".repeat(24000)),AiMessage("assistant","y".repeat(8000)),AiMessage("user","Recent question"),AiMessage("assistant","Recent answer"),AiMessage("user","Current evidence and question")))
   val fitted=ContextBudget.fit(AiConnection(AiProvider.OPENAI,"test",contextTokens=8192),request)
-  assertEquals("Current evidence and question",fitted.messages.last().text);assertTrue(fitted.messages.size<request.messages.size)
+  assertEquals(request.messages.takeLast(3),fitted.messages)
  }
- @Test fun oversizedCurrentChapterIsReportedRatherThanTruncated() {
-  try { ContextBudget.fit(AiConnection(AiProvider.CHATGPT,"test",contextTokens=8192),TextRequest("Grounding",listOf(AiMessage("user","x".repeat(10000)))));fail("Expected context error") }
-  catch(e:AiException) { assertEquals(AiErrorKind.CONTEXT,e.kind) }
+ @Test fun oversizedCurrentEvidenceAndInstructionsArePassedIntact() {
+  val request=TextRequest("Grounding ".repeat(10000),listOf(AiMessage("user","x".repeat(150000))))
+  assertEquals(request,ContextBudget.fit(AiConnection(AiProvider.CHATGPT,"test",contextTokens=8192),request))
+ }
+ @Test fun unicodeEvidenceIsNeverCutAndEstimatesUseLongArithmetic() {
+  val request=TextRequest("Grounding",listOf(AiMessage("user","ก你好🌙".repeat(10000))))
+  assertEquals(request,ContextBudget.fit(AiConnection(AiProvider.OPENAI,"test",contextTokens=8192),request))
+  assertEquals(1L,ContextBudget.estimateTokens("abcd"))
+  assertEquals(10L,ContextBudget.estimateTokens("你好🌙"))
+  assertEquals(request,ContextBudget.fit(AiConnection(AiProvider.OPENAI,"test",contextTokens=Int.MAX_VALUE),request))
  }
 }

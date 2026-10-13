@@ -6,7 +6,7 @@ import com.yugentech.quill.aira.provider.*
 import com.yugentech.quill.domain.ai.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-data class PersonalSettingsState(val busy:Boolean=false,val message:String?=null,val models:List<AiModel> = emptyList(),val revision:Long=0)
+data class PersonalSettingsState(val busy:Boolean=false,val message:String?=null,val models:List<AiModel> = emptyList(),val modelsProvider:AiProvider?=null,val revision:Long=0)
 class PersonalSettingsViewModel(val settings:ConnectionStore,private val vault:CredentialStore,
  private val provider:HttpAiProvider,private val oauth:ChatGptOAuth,private val backups:BackupManager):ViewModel() {
  private val mutable=MutableStateFlow(PersonalSettingsState())
@@ -31,23 +31,49 @@ class PersonalSettingsViewModel(val settings:ConnectionStore,private val vault:C
   require(provider!=AiProvider.CHATGPT && key.isNotBlank()) { "Enter a provider API key." }
   vault.put(provider.name,key.trim());settings.changed();"Key saved securely on this device."
  }
- fun signIn()=action { oauth.signIn();settings.changed();"ChatGPT connected. Fetch models to choose a text model." }
+ fun signIn()=action { oauth.signIn();mutable.update { it.copy(models=emptyList(),modelsProvider=null) };settings.changed();"ChatGPT connected. Fetch models to choose a text model." }
  fun disconnect(provider:AiProvider)=action {
   settings.disconnect(provider)
   val revoked=if(provider==AiProvider.CHATGPT) oauth.disconnect() else { vault.remove(provider.name);true }
-  mutable.update { it.copy(models=emptyList()) }
+  mutable.update { it.copy(models=emptyList(),modelsProvider=null) }
   if(revoked) "${provider.label} disconnected. Your books and chats are unchanged."
   else "Disconnected locally. Remote revocation was not confirmed; disconnect QuillPersonal in ChatGPT Settings too."
  }
  fun models(providerId:AiProvider)=action {
-  val models=provider.models(AiConnection(providerId,""));mutable.update { it.copy(models=models) };"${models.size} models loaded. A successful test confirms access."
+  mutable.update { it.copy(models=emptyList(),modelsProvider=providerId) }
+  val models=provider.models(AiConnection(providerId,""));settings.refreshModels(providerId,models)
+  mutable.update { it.copy(models=models) };"${models.size} models loaded. A successful test confirms access."
  }
- fun select(slot:String,connection:AiConnection)=action {
+ fun automaticContext(providerId:AiProvider,model:String):Int {
+  val id=model.trim()
+  if(mutable.value.modelsProvider==providerId) mutable.value.models.firstOrNull { it.id==id }?.let { return it.contextTokens }
+  for(slot in listOf("text","image")) {
+   val selected=settings.selected(slot)
+   if(selected?.provider==providerId && selected.model==id) return settings.contextSettings(slot)!!.automaticTokens
+  }
+  return ContextCapacity.resolve(providerId,id)
+ }
+ private fun connection(providerId:AiProvider,model:String,mode:ContextMode,manualText:String):AiConnection {
+  require(model.isNotBlank()) { "Choose a model first." }
+  val tokens=if(mode==ContextMode.AUTO) automaticContext(providerId,model) else ContextCapacity.requireManual(manualText)
+  return AiConnection(providerId,model.trim(),contextTokens=tokens)
+ }
+ fun select(slot:String,providerId:AiProvider,model:String,mode:ContextMode,manualText:String)=action {
+  val connection=connection(providerId,model,mode,manualText)
   require(saved(connection.provider)) { "Save credentials or sign in first." }
-  if(connection.provider==AiProvider.CHATGPT) require(mutable.value.models.any { it.id==connection.model }) { "Fetch and select a model available to your ChatGPT account." }
-  settings.select(slot,connection);"${if(slot=="text") "Text" else "Images"} will use ${connection.provider.label} / ${connection.model}."
+  ConnectionSelection.validate(connection,settings.selected(slot),mutable.value.modelsProvider,mutable.value.models)
+  settings.select(slot,connection,mode,automaticContext(providerId,model));"${if(slot=="text") "Text" else "Images"} will use ${connection.provider.label} / ${connection.model}."
  }
- fun test(connection:AiConnection)=action { provider.test(connection);"Connection verified with a small AI request." }
+ fun saveContext(providerId:AiProvider,model:String,mode:ContextMode,manualText:String)=action {
+  val connection=connection(providerId,model,mode,manualText)
+  val selected=settings.selected()
+  require(selected?.provider==providerId && selected.model==connection.model) { "Choose Use for text to select this connection first." }
+  settings.select("text",connection,mode,automaticContext(providerId,model))
+  "Context settings saved: ${connection.contextTokens} tokens (${if(mode==ContextMode.AUTO) "automatic" else "manual"})."
+ }
+ fun test(providerId:AiProvider,model:String,mode:ContextMode,manualText:String)=action {
+  provider.test(connection(providerId,model,mode,manualText));"Connection verified with a small AI request."
+ }
  fun export(uri:Uri)=action { backups.export(uri);"Complete library backup saved. Keys and login tokens were excluded." }
  fun restore(uri:Uri)=action { backups.restore(uri);"Library restored. Reading indexes are rebuilding. Reopen the reader to resume." }
  fun cancel() { job?.cancel() }

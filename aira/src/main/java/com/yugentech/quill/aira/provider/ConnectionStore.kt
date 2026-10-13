@@ -1,6 +1,7 @@
 package com.yugentech.quill.aira.provider
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -41,8 +42,7 @@ class CredentialStore(context: Context) {
     fun remove(name: String) { check(prefs.edit().remove(name).commit()) }
 }
 
-class ConnectionStore(context: Context) {
-    val preferences = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+class ConnectionStore(context: Context, val preferences: SharedPreferences = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)) {
     val revision = MutableStateFlow(0L)
     fun changed() { revision.value += 1 }
     fun selected(slot: String = "text"): AiConnection? {
@@ -50,20 +50,57 @@ class ConnectionStore(context: Context) {
         val model = preferences.getString("${slot}_model", "").orEmpty()
         if (model.isBlank()) return null
         if (slot == "image" && provider == AiProvider.CHATGPT) return null
-        return AiConnection(provider, model, contextTokens = preferences.getInt("${slot}_context", 32768))
+        return AiConnection(provider, model, contextTokens = contextSettings(slot)!!.effectiveTokens)
     }
-    fun select(slot: String, connection: AiConnection) {
+
+    @Synchronized fun contextSettings(slot: String = "text"): ContextSettings? {
+        val provider = preferences.getString("${slot}_provider", null)?.let { runCatching { AiProvider.valueOf(it) }.getOrNull() } ?: return null
+        val model = preferences.getString("${slot}_model", "").orEmpty()
+        if (model.isBlank()) return null
+        val legacyTokens = preferences.getInt("${slot}_context", ContextCapacity.FALLBACK)
+        val mode = preferences.getString("${slot}_context_mode", null)?.let { runCatching { ContextMode.valueOf(it) }.getOrNull() }
+            ?: if (legacyTokens == ContextCapacity.FALLBACK || legacyTokens < ContextCapacity.MIN_MANUAL) ContextMode.AUTO else ContextMode.MANUAL
+        val automatic = preferences.getInt("${slot}_automatic_context", 0).takeIf { it > 0 }
+            ?: ContextCapacity.resolve(provider, model)
+        val manual = legacyTokens.takeIf { it >= ContextCapacity.MIN_MANUAL } ?: automatic.coerceAtLeast(ContextCapacity.MIN_MANUAL)
+        val result = ContextSettings(mode, automatic, manual)
+        if (!preferences.contains("${slot}_context_mode") || !preferences.contains("${slot}_automatic_context")) {
+            check(preferences.edit().putString("${slot}_context_mode", mode.name)
+                .putInt("${slot}_automatic_context", automatic).putInt("${slot}_context", result.effectiveTokens).commit()) {
+                "Unable to migrate context settings"
+            }
+        }
+        return result
+    }
+
+    @Synchronized fun select(slot: String, connection: AiConnection, mode: ContextMode = ContextMode.AUTO,
+                            automaticTokens: Int = ContextCapacity.resolve(connection.provider, connection.model)) {
         require(slot in listOf("text", "image"))
-        require(connection.model.isNotBlank() && connection.contextTokens >= 8192)
+        require(connection.model.isNotBlank() && automaticTokens > 0)
+        require(mode != ContextMode.MANUAL || connection.contextTokens >= ContextCapacity.MIN_MANUAL) { ContextCapacity.MANUAL_ERROR }
         require(slot != "image" || connection.provider != AiProvider.CHATGPT)
         check(preferences.edit().putString("${slot}_provider", connection.provider.name)
-            .putString("${slot}_model", connection.model.trim()).putInt("${slot}_context", connection.contextTokens).commit())
+            .putString("${slot}_model", connection.model.trim()).putString("${slot}_context_mode", mode.name)
+            .putInt("${slot}_automatic_context", automaticTokens)
+            .putInt("${slot}_context", if (mode == ContextMode.AUTO) automaticTokens else connection.contextTokens).commit())
         changed()
+    }
+
+    @Synchronized fun refreshModels(provider: AiProvider, models: List<AiModel>) {
+        for (slot in listOf("text", "image")) {
+            val connection = selected(slot)?.takeIf { it.provider == provider } ?: continue
+            val model = models.firstOrNull { it.id == connection.model } ?: continue
+            val configuration = contextSettings(slot)!!
+            if (configuration.automaticTokens != model.contextTokens) {
+                select(slot, connection, configuration.mode, model.contextTokens)
+            }
+        }
     }
     fun disconnect(provider: AiProvider) {
         val edit = preferences.edit()
         for (slot in listOf("text", "image")) if (selected(slot)?.provider == provider) {
-            edit.remove("${slot}_provider").remove("${slot}_model")
+            edit.remove("${slot}_provider").remove("${slot}_model").remove("${slot}_context")
+                .remove("${slot}_context_mode").remove("${slot}_automatic_context")
         }
         check(edit.commit()); changed()
     }

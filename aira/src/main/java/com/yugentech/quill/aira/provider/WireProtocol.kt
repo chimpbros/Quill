@@ -4,13 +4,29 @@ import com.yugentech.quill.domain.ai.*
 import kotlinx.serialization.json.*
 
 object ContextBudget {
-    // UTF-8 bytes are a conservative upper bound, avoiding a Latin-text-only token estimate.
+    // Advisory estimate for history only. The provider enforces its actual token limit.
+    fun estimateTokens(text: String): Long {
+        var ascii = 0L
+        var nonAsciiBytes = 0L
+        var index = 0
+        while (index < text.length) {
+            val point = text.codePointAt(index)
+            if (point < 128) ascii++
+            else nonAsciiBytes += when { point <= 0x7ff -> 2; point <= 0xffff -> 3; else -> 4 }
+            index += Character.charCount(point)
+        }
+        return (ascii + 3) / 4 + nonAsciiBytes
+    }
+
     fun fit(connection: AiConnection, request: TextRequest): TextRequest {
         val messages = request.messages.toMutableList()
-        val budget = connection.contextTokens - 4096
-        fun size() = request.instructions.toByteArray(Charsets.UTF_8).size + messages.sumOf { it.text.toByteArray(Charsets.UTF_8).size + 32 }
-        while (size() > budget && messages.size > 1) messages.removeAt(0)
-        if (size() > budget) throw AiException(AiErrorKind.CONTEXT, "This chapter or passage exceeds the model's input budget. Choose a model with a larger context window.")
+        val budget = (connection.contextTokens.toLong() - 4096L).coerceAtLeast(0L)
+        var estimate = estimateTokens(request.instructions) + messages.sumOf { estimateTokens(it.text) + 32L }
+        while (estimate > budget && messages.size > 1) {
+            // Remove an entire oldest turn, preserving the current user message intact.
+            val end = (1 until messages.lastIndex).firstOrNull { messages[it].role == "user" } ?: messages.lastIndex
+            repeat(end) { estimate -= estimateTokens(messages.removeAt(0).text) + 32L }
+        }
         return request.copy(messages = messages)
     }
 }

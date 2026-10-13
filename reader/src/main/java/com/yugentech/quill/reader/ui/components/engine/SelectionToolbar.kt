@@ -57,7 +57,9 @@ fun SelectionToolbar(
     onAskAira: (String) -> Unit,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rangeActionLabel: String = "Start here",
+    onRangeSelection: () -> Unit = {}
 ) {
     val haptic = koinInject<HapticService>()
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -92,6 +94,8 @@ fun SelectionToolbar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            ToolbarAction(modifier = Modifier.weight(1f), icon = Icons.Rounded.Brush, label = rangeActionLabel,
+                onClick = onRangeSelection)
             if (isAiraReady) {
                 ToolbarAction(
                     modifier = Modifier.weight(1f),

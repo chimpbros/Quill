@@ -42,16 +42,19 @@ import com.yugentech.quill.database.entity.HighlightEntity
         ReadingSessionEntity::class,
         BookIndexingStateEntity::class,
         HighlightEntity::class,
-        VisualEntity::class
+        VisualEntity::class,
+        com.yugentech.quill.database.entity.BookmarkEntity::class,
+        com.yugentech.quill.database.entity.AiraDiscussionEntity::class
     ],
     views = [
         LibraryBookView::class
     ],
-    version = 4,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
 abstract class AppDatabase : RoomDatabase() {
+    abstract fun airaDiscussionDao(): com.yugentech.quill.database.dao.AiraDiscussionDao
     abstract fun userDao(): UserDao
     abstract fun bookDao(): BookDao
     abstract fun categoryDao(): CategoryDao
@@ -63,4 +66,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookIndexingStateDao(): BookIndexingStateDao
     abstract fun highlightDao(): HighlightDao
     abstract fun visualDao(): VisualDao
+    abstract fun bookmarkDao(): com.yugentech.quill.database.dao.BookmarkDao
 }

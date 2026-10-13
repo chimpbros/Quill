@@ -26,6 +26,11 @@ data class ChapterText(
 class EpubTextExtractor(
     private val context: Context
 ) {
+    suspend fun <T> withPublication(filePath: String, block: suspend (Publication) -> T): T {
+        val publication = openPublication(filePath) ?: error("Book text is unavailable. Download or reimport this book.")
+        return try { block(publication) } finally { publication.close() }
+    }
+    suspend fun structure(filePath: String): PublicationStructure = withPublication(filePath) { PublicationStructure.load(it) }
 
     companion object {
         private const val MIN_CHAPTER_LENGTH = 50
@@ -111,6 +116,7 @@ class EpubTextExtractor(
                         )
                     }
                 } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                     Timber.w(e, "Error parsing chapter $index ('$finalTitle')")
                 }
             }
@@ -118,6 +124,7 @@ class EpubTextExtractor(
             publication.close()
 
         } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
             Timber.e(e, "✗ Fatal error during EPUB extraction stream")
         }
     }.flowOn(Dispatchers.IO)
@@ -171,6 +178,7 @@ class EpubTextExtractor(
                     )
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Timber.e(e, "Error extracting chapter $chapterIndex from $filePath")
                 null
             } finally {
@@ -201,6 +209,7 @@ class EpubTextExtractor(
                 return null
             }
         } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
             Timber.w(e, "Failed to open publication for $filePath")
             null
         }

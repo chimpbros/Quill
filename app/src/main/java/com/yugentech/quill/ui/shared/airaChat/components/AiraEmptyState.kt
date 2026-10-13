@@ -105,9 +105,9 @@ fun AiraEmptyState(
 
         Text(
             text = if (isIndexing)
-                "Aira is going through your book. She'll be ready to chat in just a moment."
+                "You can ask questions now while Aira indexes your book in the background."
             else if (!hasStartedReading)
-                "Aira needs you to read a few pages first before she can discuss the story with you."
+                "Ask for an introduction, or start reading to discuss passages and the story so far."
             else
                 "Ask me to summarize chapters, explain complex themes, or recall characters.",
             style = MaterialTheme.typography.bodyLarge,

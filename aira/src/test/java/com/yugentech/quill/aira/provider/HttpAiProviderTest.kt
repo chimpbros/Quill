@@ -74,4 +74,22 @@ class HttpAiProviderTest {
   val api=provider("{\"models\":[{\"slug\":\"visible\",\"display_name\":\"Visible\",\"visibility\":\"list\"},{\"slug\":\"hidden\",\"visibility\":\"hidden\"}]}")
   assertEquals(listOf("visible"),api.models(AiConnection(AiProvider.CHATGPT,"")).map { it.id });api.client.close()
  }
+ @Test fun longChapterReachesProviderIntact()=runTest {
+  val chapter="A long chapter sentence. ".repeat(3000)
+  val api=provider("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Summary\"}\n\ndata: {\"type\":\"response.completed\"}\n\n") { req ->
+   val body=Json.parseToJsonElement((req.body as TextContent).text).jsonObject
+   assertEquals(chapter,body["input"]!!.jsonArray.single().jsonObject["content"]!!.jsonPrimitive.content)
+  }
+  assertEquals(AiEvent.Completed("Summary"),api.generate(AiConnection(AiProvider.CHATGPT,"gpt-6-luna",contextTokens=32768),TextRequest("Summarize the whole chapter.",listOf(AiMessage("user",chapter)))).toList().last())
+  api.client.close()
+ }
+ @Test fun actualProviderContextRejectionIsNotNetworkOrQuotaFailure()=runTest {
+  val api=provider("{\"error\":{\"code\":\"context_length_exceeded\"}}",HttpStatusCode.BadRequest)
+  val result=api.generate(AiConnection(AiProvider.CHATGPT,"gpt-6-luna"),request).toList().last() as AiEvent.Failed
+  assertEquals(AiErrorKind.CONTEXT,result.error.kind);api.client.close()
+ }
+ @Test fun modelDiscoveryResolvesMetadataBeforeDocumentedDefaults()=runTest {
+  val api=provider("{\"models\":[{\"slug\":\"gpt-6-luna\",\"visibility\":\"list\"},{\"slug\":\"reported\",\"visibility\":\"list\",\"context_length\":64000}]}")
+  assertEquals(listOf(1050000,64000),api.models(AiConnection(AiProvider.CHATGPT,"")).map { it.contextTokens });api.client.close()
+ }
 }

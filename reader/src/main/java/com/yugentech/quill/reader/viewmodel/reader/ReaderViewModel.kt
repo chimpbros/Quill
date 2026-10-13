@@ -12,6 +12,7 @@ import com.yugentech.quill.reader.repository.session.ReadingSessionRepository
 import com.yugentech.quill.reader.ui.components.engine.ReaderDefaults
 import com.yugentech.quill.reader.sound.model.BackgroundSound
 import com.yugentech.theme.service.HapticService
+import com.yugentech.quill.aira.rag.locatorAtHref
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -52,7 +53,8 @@ class ReaderViewModel(
     private val sessionRepository: ReadingSessionRepository,
     private val preferencesRepository: ReaderSettingsRepository,
     private val backgroundSoundRepository: BackgroundSoundRepository,
-    private val hapticService: HapticService
+    private val hapticService: HapticService,
+    private val bookmarkDao: com.yugentech.quill.database.dao.BookmarkDao
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Idle)
@@ -60,6 +62,58 @@ class ReaderViewModel(
 
     private val _highlights = MutableStateFlow<List<HighlightEntity>>(emptyList())
     val highlights = _highlights.asStateFlow()
+    private val _bookmarks = MutableStateFlow<List<com.yugentech.quill.database.entity.BookmarkEntity>>(emptyList())
+    val bookmarks = _bookmarks.asStateFlow()
+    private var bookmarksJob: Job? = null
+    private var structure: com.yugentech.quill.aira.rag.PublicationStructure? = null
+    private val _rangeState = MutableStateFlow(com.yugentech.quill.reader.ui.components.range.ReaderRangeState())
+    val rangeState = _rangeState.asStateFlow()
+    private var rangeJob: Job? = null
+
+    fun cancelRange() { rangeJob?.cancel(); _rangeState.value = com.yugentech.quill.reader.ui.components.range.ReaderRangeState() }
+    fun adjustRangeStart() { _rangeState.value = _rangeState.value.copy(range = null, adjustingStart = true, error = null) }
+    fun adjustRangeEnd() { _rangeState.value = _rangeState.value.copy(range = null, adjustingStart = false, error = null) }
+    fun setRangeNote(note: String) { _rangeState.value = _rangeState.value.copy(note = note) }
+    fun setRangeColor(color: Int) { _rangeState.value = _rangeState.value.copy(colorInt = color) }
+    fun selectRangeEndpoint(locator: Locator) {
+        rangeJob?.cancel()
+        val previous = _rangeState.value
+        val start = if (previous.start == null || previous.adjustingStart) locator else previous.start
+        val end = if (previous.start == null || previous.adjustingStart) previous.end else locator
+        val next = previous.copy(start = start, end = end, range = null, adjustingStart = false, error = null)
+        _rangeState.value = next
+        rangeJob = viewModelScope.launch {
+            try {
+                val navigation = structure ?: error("The book is still loading. Select the endpoint again.")
+                withContext(Dispatchers.Default) {
+                    val spine = navigation.resources.indexOf(com.yugentech.quill.aira.rag.PublicationStructure.normalizeHref(locator.href.toString()))
+                    require(spine >= 0 && navigation.documents[spine].exactRange(locator) != null) { "The exact endpoint could not be resolved. Select the words again." }
+                }
+                if (end != null) {
+                    val resolved = withContext(Dispatchers.Default) { com.yugentech.quill.aira.rag.TextRangeResolver.resolve(navigation, start, end) }
+                    _rangeState.value = next.copy(range = resolved)
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (error: Exception) { _rangeState.value = next.copy(
+                adjustingStart = previous.start == null || previous.adjustingStart,
+                error = error.message ?: "Unable to resolve that range.") }
+        }
+    }
+    fun saveRangeHighlight(bookId: String) {
+        val selected = _rangeState.value
+        val range = selected.range ?: return
+        if (selected.saving) return
+        _rangeState.value = selected.copy(saving = true)
+        rangeJob = viewModelScope.launch {
+            try {
+                readerRepository.saveHighlight(HighlightEntity(UUID.randomUUID().toString(), bookId,
+                    range.startLocator.toJSON().toString(), selected.colorInt, selected.note.trim().takeIf { it.isNotEmpty() },
+                    segmentsJson = range.segmentsJson(), selectedText = range.text))
+                _rangeState.value = com.yugentech.quill.reader.ui.components.range.ReaderRangeState()
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (error: Exception) { _rangeState.value = selected.copy(error = error.message ?: "Unable to save the highlight.") }
+        }
+    }
 
     private val _activeSound = MutableStateFlow<BackgroundSound>(BackgroundSound.NONE)
     val activeSound = _activeSound.asStateFlow()
@@ -81,8 +135,16 @@ class ReaderViewModel(
     private var sessionStartTime: Long = 0L
 
     fun loadBook(bookId: String, initialHref: String?, locatorJson: String? = null) {
+        val loaded = _uiState.value as? ReaderUiState.Success
+        if (loaded?.bookId == bookId) {
+            // Configuration recreation retains the open publication in this ViewModel.
+            val locator = locatorJson?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+            _uiState.value = loaded.copy(initialLocator = locator ?: loaded.initialLocator)
+            return
+        }
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Idle
+            cancelRange()
 
             withContext(Dispatchers.IO) {
                 try {
@@ -111,6 +173,8 @@ class ReaderViewModel(
 
                     publication = pub
                     val positions = pub.positions()
+                    val navigation = com.yugentech.quill.aira.rag.PublicationStructure.load(pub)
+                    structure = navigation
                     tocMap = flattenToc(pub.tableOfContents)
 
                     val targetLocator = locatorJson?.let { jsonStr ->
@@ -122,11 +186,7 @@ class ReaderViewModel(
                     }
 
                     val explicitLocator = initialHref?.let { href ->
-                        Url.Companion(href)?.let { url ->
-                            pub.linkWithHref(url)?.let { link ->
-                                pub.locatorFromLink(link)
-                            }
-                        }
+                        pub.locatorAtHref(href, navigation.sections.firstOrNull { it.href == href }?.title)
                     }
 
                     val savedLocator = bookEntity.lastLocatorJson?.let { jsonStr ->
@@ -146,10 +206,13 @@ class ReaderViewModel(
                         publication = pub,
                         totalPages = totalPages,
                         allPositions = positions,
-                        initialLocator = finalLocator
+                        initialLocator = finalLocator,
+                        structure = navigation
                     )
 
                     observeHighlights(bookId)
+                    bookmarksJob?.cancel()
+                    bookmarksJob = viewModelScope.launch { bookmarkDao.observe(bookId).collect { _bookmarks.value = it } }
 
                     // Auto-play sound if enabled
                     viewModelScope.launch {
@@ -160,6 +223,7 @@ class ReaderViewModel(
                     }
 
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     _uiState.value = ReaderUiState.Error(e.message ?: "Failed to open book")
                 }
             }
@@ -213,7 +277,7 @@ class ReaderViewModel(
 
             val totalProgress = locator.locations.totalProgression?.toFloat() ?: 0f
 
-            val chapterTitle = tocMap[locator.href.toString()]
+            val chapterTitle = structure?.active(locator)?.title ?: tocMap[locator.href.toString()]
                 ?: pub.readingOrder.getOrNull(chapterIndex)?.title
 
             val locatorJson = locator.toJSON().toString()
@@ -232,6 +296,25 @@ class ReaderViewModel(
         viewModelScope.launch {
             preferencesRepository.saveEpubPreferences(newPreferences)
         }
+    }
+    fun toggleBookmark(bookId: String, locator: Locator) {
+        val key = structure?.locationKey(locator) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val old = bookmarkDao.atLocation(bookId, key)
+            if (old != null) bookmarkDao.delete(old.id)
+            else bookmarkDao.insert(com.yugentech.quill.database.entity.BookmarkEntity(
+                id = UUID.randomUUID().toString(), bookId = bookId,
+                locatorJson = locator.copy(title = structure?.active(locator)?.title ?: locator.title).toJSON().toString(), locationKey = key))
+        }
+    }
+    fun removeBookmark(bookmark: com.yugentech.quill.database.entity.BookmarkEntity) {
+        viewModelScope.launch(Dispatchers.IO) { bookmarkDao.delete(bookmark.id) }
+    }
+    fun restoreBookmark(bookmark: com.yugentech.quill.database.entity.BookmarkEntity) {
+        viewModelScope.launch(Dispatchers.IO) { bookmarkDao.insert(bookmark) }
+    }
+    fun renameBookmark(id: String, label: String) {
+        viewModelScope.launch(Dispatchers.IO) { bookmarkDao.rename(id, label.trim().takeIf { it.isNotEmpty() }) }
     }
 
     fun updateVolumeNavigation(enabled: Boolean) {

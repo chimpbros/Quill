@@ -21,10 +21,10 @@ interface AiraMessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<AiraMessageEntity>)
 
-    @Query("SELECT * FROM aira_messages WHERE bookId = :bookId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM aira_messages WHERE bookId = :bookId ORDER BY timestamp ASC, id ASC")
     fun getMessagesForBook(bookId: String): Flow<List<AiraMessageEntity>>
 
-    @Query("SELECT * FROM aira_messages WHERE bookId = :bookId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM aira_messages WHERE bookId = :bookId ORDER BY timestamp ASC, id ASC")
     suspend fun getMessagesForBookOnce(bookId: String): List<AiraMessageEntity>
 
     @Query("""

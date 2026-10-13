@@ -10,6 +10,7 @@ fun resolveChips(
 ): List<Pair<String, QuickPrompt>> {
     if (selectedText.isNullOrBlank()) {
         return listOf(
+            "Catch me up here" to QuickPrompt.CatchMeUp,
             "Summarize chapter" to QuickPrompt.SummarizeChapter(currentChapterIndex),
             "Who are the characters?" to QuickPrompt.WhoAreTheCharacters,
             "What are the themes?" to QuickPrompt.WhatAreTheThemes(currentChapterIndex)
@@ -41,6 +42,7 @@ fun resolveChips(
             }
         }
         else -> listOf(
+            "Explain this conversation" to QuickPrompt.ExplainConversation(trimmed),
             "Explain this" to QuickPrompt.ExplainThis(trimmed),
             "What's the significance?" to QuickPrompt.WhatIsTheSignificance(trimmed, currentChapterIndex),
             "Visualize this" to QuickPrompt.VisualizeThis(

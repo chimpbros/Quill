@@ -63,6 +63,7 @@ fun BookDetailsTopBar(
     onFavoriteClick: () -> Unit,
     onHighlightsClick: () -> Unit,
     onVisualsClick: () -> Unit,
+    onBookmarksClick: () -> Unit = {},
     onResetProgressClick: () -> Unit,
     onDeleteClick: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior
@@ -152,7 +153,7 @@ fun BookDetailsTopBar(
                             tonalElevation = 8.dp,
                             shadowElevation = 8.dp
                         ) {
-
+                            DropdownMenuItem(text = { Text("Bookmarks") }, onClick = { menuExpanded = false; onBookmarksClick() })
                             DropdownMenuItem(
                                 text = {
                                     Text(

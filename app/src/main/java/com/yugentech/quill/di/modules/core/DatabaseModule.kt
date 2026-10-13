@@ -15,7 +15,7 @@ val databaseModule = module {
             AppDatabase::class.java,
             "quill_database"
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, com.yugentech.quill.database.database.MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, com.yugentech.quill.database.database.MIGRATION_3_4, com.yugentech.quill.database.database.MIGRATION_4_5, com.yugentech.quill.database.database.MIGRATION_5_6, com.yugentech.quill.database.database.MIGRATION_6_7)
             .build()
     }
 
@@ -63,4 +63,5 @@ val databaseModule = module {
     single {
         get<AppDatabase>().visualDao()
     }
+    single { get<AppDatabase>().bookmarkDao() }
 }

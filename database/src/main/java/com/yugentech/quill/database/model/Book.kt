@@ -24,5 +24,6 @@ data class Book(
     val lastChapterTitle: String? = null,
     val lastChapterIndex: Int = 0,
     val lastScrollPosition: Int = 0,
-    val chapters: List<Chapter> = emptyList()
+    val chapters: List<Chapter> = emptyList(),
+    val lastLocatorJson: String? = null
 )

@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class QueryIntent {
+    SCENE_EXPLANATION,
     CHAPTER_SUMMARY,
     CHARACTER_PROFILE,
     CHARACTER_RECENT,
@@ -13,6 +14,8 @@ enum class QueryIntent {
     THEME_ANALYSIS,
     SIGNIFICANCE,
     QUOTE_LOOKUP,
+    TERM_EXPLANATION,
+    PASSAGE_EXPLANATION,
     GENERAL;
 
     // Only consulted by the generic multi-query retrieval path -- CHAPTER_SUMMARY and the three
@@ -51,7 +54,8 @@ sealed class Intent {
         val characterName: String? = null,
         // Populated only for THEME_ANALYSIS / SIGNIFICANCE -- true means "about the current
         // chapter specifically", false means "about the book as a whole".
-        val isChapterScoped: Boolean = false
+        val isChapterScoped: Boolean = false,
+        val plan: com.yugentech.quill.aira.context.ContextPlan = com.yugentech.quill.aira.context.ContextPlan()
     ) : Intent()
 }
 

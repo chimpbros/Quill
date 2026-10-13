@@ -96,7 +96,9 @@ fun AiraPeekBar(
     onSendMessage: (String) -> Unit,
     onClearSelection: () -> Unit,
     onDismiss: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onNewTopic: () -> Unit = {},
+    onSourceJump: ((com.yugentech.quill.aira.context.SourceExcerpt) -> Unit)? = null
 ) {
     val haptic = koinInject<HapticService>()
     val view = LocalView.current
@@ -113,6 +115,8 @@ fun AiraPeekBar(
     }
 
     var inputText by remember { mutableStateOf("") }
+    var shownSource by remember { mutableStateOf<com.yugentech.quill.aira.context.SourceExcerpt?>(null) }
+    shownSource?.let { SourceExcerptDialog(it, { shownSource = null }, onSourceJump) }
 
     // Closing hides the bar and clears the response/selection upstream in the same moment, but
     // the exit slide takes 300ms -- rendering the live values would swap a long response for the
@@ -221,8 +225,10 @@ fun AiraPeekBar(
     // the keyboard is opening/closing; that animation is kept short (150ms) specifically so that
     // catch-up stays fast enough to not read as a separate, delayed motion.
     val maxSheetHeight = (screenHeight - statusBarTop - STATUS_BAR_CLEARANCE - liftDp).coerceAtLeast(0.dp)
-    val minSheetHeightPx = with(density) { MIN_SHEET_HEIGHT.toPx() }
     val maxSheetHeightPx = with(density) { maxSheetHeight.toPx() }
+    // A small window or the keyboard may leave less room than the preferred minimum.
+    val minSheetHeightPx = with(density) { MIN_SHEET_HEIGHT.toPx() }.coerceAtMost(maxSheetHeightPx)
+    val constrainedManualHeightPx = manualHeightPx?.coerceIn(minSheetHeightPx, maxSheetHeightPx)
 
     val canSend = inputText.isNotBlank() && !shownUiState.isLoading
 
@@ -291,7 +297,7 @@ fun AiraPeekBar(
                     else -> 4
                 }
 
-                val sheetHeightModifier = manualHeightPx?.let { px ->
+                val sheetHeightModifier = constrainedManualHeightPx?.let { px ->
                     Modifier.height(with(density) { px.toDp() })
                 } ?: Modifier.heightIn(max = maxSheetHeight)
 
@@ -353,6 +359,9 @@ fun AiraPeekBar(
                                     .onSizeChanged { responseContentHeightPx = it.height.toFloat() }
                                     .padding(top = headerHeightDp)
                             ) {
+                                Column {
+                                DiscussionControls(shownUiState.discussion, shownUiState.sources, shownUiState.isLoading,
+                                    onNewTopic, { onQuickAction(QuickPrompt.IncludeMoreContext) }, onSourceJump)
                                 PeekResponseArea(
                                     airaUiState = shownUiState,
                                     showLimitReached = enforceLimitUi,
@@ -372,8 +381,10 @@ fun AiraPeekBar(
                                             onClearSelection()
                                         }
                                     },
-                                    onGreetingSelected = { currentGreeting = it }
+                                    onGreetingSelected = { currentGreeting = it },
+                                    onSourceClick = { shownSource = it }
                                 )
+                                }
                             }
 
                             // A single continuous fade across the header's height plus the
@@ -431,7 +442,7 @@ fun AiraPeekBar(
                                         orientation = Orientation.Vertical,
                                         state = rememberDraggableState { deltaPx ->
                                             if (hasResponseContent) {
-                                                val base = manualHeightPx ?: measuredHeightPx
+                                                val base = constrainedManualHeightPx ?: measuredHeightPx
                                                 // The header (and its overlaid drag handle) is
                                                 // itself an overlay on top of the response
                                                 // content below, so its height is already folded
@@ -441,7 +452,8 @@ fun AiraPeekBar(
                                                 val naturalContentHeightPx =
                                                     responseContentHeightPx + inputRowHeightPx
                                                 val maxAllowedPx = (naturalContentHeightPx + maxDragUpSlackPx)
-                                                    .coerceAtMost(maxSheetHeightPx)
+                                                    // Short answers/loading can be smaller than the minimum.
+                                                    .coerceIn(minSheetHeightPx, maxSheetHeightPx)
                                                 manualHeightPx = (base - deltaPx)
                                                     .coerceIn(minSheetHeightPx, maxAllowedPx)
                                             }

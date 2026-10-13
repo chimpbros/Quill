@@ -85,7 +85,8 @@ fun PeekResponseArea(
     startRevealed: Boolean = false,
     onResponseRevealed: (String) -> Unit = {},
     onChipClick: (QuickPrompt) -> Unit = {},
-    onGreetingSelected: (String) -> Unit = {}
+    onGreetingSelected: (String) -> Unit = {},
+    onSourceClick: (com.yugentech.quill.aira.context.SourceExcerpt) -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -173,6 +174,8 @@ fun PeekResponseArea(
                         Column {
                             Spacer(Modifier.height(12.dp))
                             TypewriterText(
+                                sources = airaUiState.sources,
+                                onSourceClick = onSourceClick,
                                 text = state.text,
                                 resetKey = state.text,
                                 startRevealed = startRevealed,

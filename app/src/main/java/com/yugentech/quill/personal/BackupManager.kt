@@ -32,7 +32,7 @@ object BackupPaths {
 class BackupManager(private val context:Context,private val db:AppDatabase,private val connections:ConnectionStore,
  private val stores:Map<String,DataStore<Preferences>>,private val retriever:com.yugentech.quill.aira.rag.RagRetriever?=null) {
  private val mutex=Mutex()
- private val tables=listOf("books","user_categories","users","highlights","aira_messages","reading_sessions","visuals")
+ private val tables=listOf("books","user_categories","users","highlights","aira_messages","reading_sessions","visuals","bookmarks","aira_discussions")
  private val journal=File(context.filesDir,"restore-journal.json")
  private val sharedNames=listOf("ai_settings","local_profile")
  private val pathColumns=mapOf("books" to setOf("localFilePath","coverUrl"),"visuals" to setOf("imagePath"))
@@ -160,7 +160,7 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
   val books=data.getJSONArray("books")
   val bookIds=(0 until books.length()).map { books.getJSONObject(it).getString("id") }
   require(bookIds.size==bookIds.toSet().size) { "Duplicate book identifiers" }
-  for(table in listOf("highlights","aira_messages","reading_sessions","visuals")) {
+  for(table in listOf("highlights","aira_messages","reading_sessions","visuals","bookmarks","aira_discussions")) {
    val rows=data.getJSONArray(table)
    for(i in 0 until rows.length()) require(rows.getJSONObject(i).getString("bookId") in bookIds) { "Backup refers to a missing book" }
   }
@@ -190,10 +190,47 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
    sql.setTransactionSuccessful()
   } finally { sql.endTransaction();db.invalidationTracker.refreshAsync() }
  }
+ private fun upgradeVersion4(data:JSONObject):JSONObject {
+  require(data.keys().asSequence().toSet()==(tables.toSet()-setOf("bookmarks", "aira_discussions"))) { "Unsupported version-4 library tables" }
+  val messages=data.getJSONArray("aira_messages")
+  for(index in 0 until messages.length()) {
+   val row=messages.getJSONObject(index)
+   require(!row.has("requiresSpoilerPermission")) { "Unexpected version-4 message schema" }
+   row.put("requiresSpoilerPermission",1)
+  }
+  data.put("bookmarks",JSONArray())
+  return data
+ }
+ private fun upgradeLibrary(data:JSONObject,version:Int):JSONObject {
+  if(version==4) upgradeVersion4(data)
+  if(version<=5) {
+   require(data.keys().asSequence().toSet()==tables.toSet()-"aira_discussions") { "Unsupported older library tables" }
+   val messages=data.getJSONArray("aira_messages")
+   for(i in 0 until messages.length()) {
+    val row=messages.getJSONObject(i)
+    for(column in listOf("topicId","boundaryLocatorJson","sourcesJson")) {
+     require(!row.has(column)) { "Unexpected older message schema" };row.put(column,JSONObject.NULL)
+    }
+   }
+   data.put("aira_discussions",JSONArray())
+  }
+  if(version<=6) {
+   val highlights=data.getJSONArray("highlights")
+   for(i in 0 until highlights.length()) for(column in listOf("segmentsJson","selectedText")) {
+    val row=highlights.getJSONObject(i)
+    require(!row.has(column)) { "Unexpected older highlight schema" };row.put(column,JSONObject.NULL)
+   }
+  }
+  return data
+ }
  suspend fun recover()=withContext(Dispatchers.IO) {
   if(!journal.exists())return@withContext
   val old=JSONObject(journal.readText())
-  replaceData(old.getJSONObject("tables"));applySettings(old.getJSONObject("settings"));retriever?.invalidate();check(journal.delete())
+  val recovered=old.getJSONObject("tables")
+  val highlights=recovered.getJSONArray("highlights")
+  val hasSegments=(0 until highlights.length()).any { highlights.getJSONObject(it).has("segmentsJson") }
+  val version=old.optInt("databaseVersion",if(hasSegments) 7 else if(recovered.has("aira_discussions")) 6 else if(recovered.has("bookmarks")) 5 else 4)
+  replaceData(upgradeLibrary(recovered,version));applySettings(old.getJSONObject("settings"));retriever?.invalidate();check(journal.delete())
   reindex()
  }
  suspend fun restore(uri:Uri)=mutex.withLock { withContext(Dispatchers.IO) {
@@ -208,7 +245,8 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
     while(true) { val count=zip.read(chunk);if(count<0)break;require(buffer.size()+count<=64*1024*1024) { "Backup manifest is too large" };buffer.write(chunk,0,count) }
     val bytes=buffer.toByteArray()
     val m=JSONObject(String(bytes,Charsets.UTF_8))
-    require(m.getInt("format")==1 && m.getInt("databaseVersion")==db.openHelper.readableDatabase.version) { "Unsupported backup version" }
+    require(m.getInt("format")==1 && m.getInt("databaseVersion") in setOf(4,5,6,db.openHelper.readableDatabase.version)) { "Unsupported backup version" }
+    upgradeLibrary(m.getJSONObject("tables"),m.getInt("databaseVersion"))
     val files=m.getJSONArray("files");val expected=linkedMapOf<String,JSONObject>()
     var total=0L
     for(i in 0 until files.length()) {
@@ -249,7 +287,7 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
    cancellation.state.asFlow().first { it is Operation.State.SUCCESS || it is Operation.State.FAILURE }.let {
     check(it is Operation.State.SUCCESS) { "Unable to pause book indexing for restore" }
    }
-   val old=JSONObject().put("tables",dump()).put("settings",settings())
+   val old=JSONObject().put("databaseVersion",db.openHelper.readableDatabase.version).put("tables",dump()).put("settings",settings())
    android.util.AtomicFile(journal).let { atomic -> val out=atomic.startWrite();try { out.write(old.toString().toByteArray());atomic.finishWrite(out) } catch(e:Exception) { atomic.failWrite(out);throw e } }
    try {
     replaceData(data);applySettings(manifest.getJSONObject("settings"));retriever?.invalidate();check(journal.delete());keep=true

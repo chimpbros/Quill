@@ -109,7 +109,7 @@ class HttpAiProvider(val client: HttpClient, private val credentials: Credential
             val id=when(connection.provider) { AiProvider.GEMINI -> item.string("name").removePrefix("models/"); AiProvider.CHATGPT -> item.string("slug"); else -> item.string("id") }
             if(id.isBlank()) return@mapNotNull null
             AiModel(id,item.string("display_name").ifBlank { item.string("displayName").ifBlank { item.string("name").ifBlank { id } } },
-                (item["context_length"] ?: item["inputTokenLimit"])?.jsonPrimitive?.intOrNull ?: 32768,
+                ContextCapacity.resolve(connection.provider,id,(item["context_length"] ?: item["inputTokenLimit"])?.jsonPrimitive?.intOrNull),
                 ((item["architecture"] as? JsonObject)?.get("output_modalities") as? JsonArray)?.any { it.jsonPrimitive.content=="image" } ?: id.contains("image",true))
         }
     }

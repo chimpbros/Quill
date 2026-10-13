@@ -78,6 +78,14 @@ fun AiraChatScreen(
     }
 
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val jumpToSource: (com.yugentech.quill.aira.context.SourceExcerpt) -> Unit = { source ->
+        context.startActivity(com.yugentech.quill.reader.ReaderActivity.createIntent(context, viewModel.bookId,
+            locatorJson = source.locatorJson, returnLocatorJson = uiState.readingLocatorJson))
+    }
+    uiState.clarification?.let {
+        com.yugentech.quill.reader.ui.components.aira.ScopeClarificationDialog(it, viewModel::chooseScope, viewModel::dismissClarification)
+    }
 
     var enforceLimitUi by remember { mutableStateOf(!uiState.canSendQuery) }
 
@@ -161,7 +169,7 @@ fun AiraChatScreen(
         ) {
             val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val kbFraction = (imeBottom / 300.dp).coerceIn(0f, 1f)
-            val bottomClearance = lerp(100.dp, 76.dp, kbFraction)
+            val bottomClearance = lerp(180.dp, 156.dp, kbFraction)
 
             AnimatedContent(
                 targetState = isChatEmpty,
@@ -194,6 +202,7 @@ fun AiraChatScreen(
                         uiState = uiState,
                         listState = listState,
                         bottomPadding = bottomClearance,
+                        onSourceJump = jumpToSource,
                         onSpeakClick = { text ->
                             scope.launch { voiceOutputManager.speak(text) }
                         },
@@ -233,17 +242,21 @@ fun AiraChatScreen(
             ) { isLimitReached ->
                 if (!isLimitReached) {
                     AnimatedVisibility(
-                        visible = !uiState.isIndexing && uiState.hasStartedReading,
+                        visible = uiState.hasStartedReading,
                         modifier = Modifier
                             .imePadding()
                             .fillMaxWidth(),
                         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                     ) {
+                        Column {
+                        com.yugentech.quill.reader.ui.components.aira.DiscussionControls(uiState.discussion,
+                            uiState.discussion?.sources.orEmpty(), uiState.isLoading, viewModel::newTopic,
+                            viewModel::expandContext, jumpToSource)
                         InputBar(
                             inputText = inputText,
                             onInputChange = { inputText = it },
-                            isEnabled = !uiState.isLoading && uiState.isReady,
+                            isEnabled = !uiState.isLoading,
                             isStreaming = uiState.isStreaming || uiState.isLoading,
                             onSend = {
                                 if (inputText.isNotBlank()) {
@@ -259,6 +272,7 @@ fun AiraChatScreen(
                                 viewModel.stopGeneration()
                             }
                         )
+                        }
                     }
                 } else {
                     androidx.compose.material3.TextButton(onClick=navigateToSubscriptions) { Text("Set up AI connection") }

@@ -3,9 +3,13 @@ package com.yugentech.quill.reader.ui.components.overlay.parent
 import com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt
 
 sealed interface ReaderAction {
+    data object OnNewTopic : ReaderAction
+    data class OnSourceJump(val source: com.yugentech.quill.aira.context.SourceExcerpt) : ReaderAction
     data object OnBackClick : ReaderAction
     data object OnSettingsClick : ReaderAction
     data object OnTocClick : ReaderAction
+    data object OnSearchClick : ReaderAction
+    data object OnBookmarkClick : ReaderAction
     data object OnSoundClick : ReaderAction
     data object OnScrubStart : ReaderAction
     data object OnScrubEnd : ReaderAction

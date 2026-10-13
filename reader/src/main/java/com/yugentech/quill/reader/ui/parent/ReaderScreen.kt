@@ -43,6 +43,7 @@ import com.yugentech.quill.reader.ui.components.tocSheet.TocSheet
 import com.yugentech.quill.reader.viewmodel.reader.ReaderUiState
 import com.yugentech.quill.reader.viewmodel.reader.ReaderViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.koin.androidx.compose.koinViewModel
 import org.readium.r2.navigator.Decoration
@@ -60,7 +61,8 @@ fun ReaderScreen(
     statusBarHeight: Dp = 0.dp,
     onPreferencesChange: (EpubPreferences) -> Unit,
     onLocatorChange: (Locator) -> Unit,
-    onMenuVisibilityChange: (Boolean) -> Unit = {}
+    onMenuVisibilityChange: (Boolean) -> Unit = {},
+    returnLocator: Locator? = null
 ) {
     when (uiState) {
         is ReaderUiState.Idle -> Unit
@@ -78,7 +80,8 @@ fun ReaderScreen(
             statusBarHeight = statusBarHeight,
             onPreferencesChange = onPreferencesChange,
             onLocatorChange = onLocatorChange,
-            onMenuVisibilityChange = onMenuVisibilityChange
+            onMenuVisibilityChange = onMenuVisibilityChange,
+            returnLocator = returnLocator
         )
     }
 }
@@ -93,10 +96,14 @@ private fun ReaderSuccess(
     statusBarHeight: Dp,
     onPreferencesChange: (EpubPreferences) -> Unit,
     onLocatorChange: (Locator) -> Unit,
-    onMenuVisibilityChange: (Boolean) -> Unit
+    onMenuVisibilityChange: (Boolean) -> Unit,
+    returnLocator: Locator?
 ) {
     val quickViewModel: QuickViewModel = koinViewModel()
     val airaUiState by quickViewModel.uiState.collectAsState()
+    airaUiState.clarification?.let {
+        com.yugentech.quill.reader.ui.components.aira.ScopeClarificationDialog(it, quickViewModel::chooseScope, quickViewModel::dismissClarification)
+    }
     val isPro = airaUiState.isPro
     val isReady = airaUiState.isReady
 
@@ -108,20 +115,29 @@ private fun ReaderSuccess(
     )
 
     val dbHighlights by viewModel.highlights.collectAsState()
+    val rangeState by viewModel.rangeState.collectAsState()
+    LaunchedEffect(state.bookId, returnLocator) {
+        if (returnLocator != null) {
+            screenState.searchOrigin = returnLocator
+            screenState.canReturnFromSearch = true
+        }
+    }
+    val bookmarks by viewModel.bookmarks.collectAsState()
+    val currentKey = screenState.currentLocator?.let { state.structure.locationKey(it) }
+    val isBookmarked = bookmarks.any { it.locationKey == currentKey }
+    val bookmarkSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val bookmarkScope = androidx.compose.runtime.rememberCoroutineScope()
 
     val activeDecorations = remember(dbHighlights) {
-        dbHighlights.mapNotNull { entity ->
-            try {
-                Locator.fromJSON(JSONObject(entity.locatorJson))?.let { locator ->
+        dbHighlights.flatMap { entity ->
+                com.yugentech.quill.aira.rag.TextRangeResolver.segments(entity.segmentsJson, entity.locatorJson).mapIndexed { index, locator ->
                     Decoration(
-                        id = entity.id,
+                        id = "${entity.id}::segment:$index",
                         locator = locator,
-                        style = Decoration.Style.Highlight(tint = entity.colorInt)
+                        style = Decoration.Style.Highlight(tint = entity.colorInt),
+                        extras = mapOf("highlightId" to entity.id)
                     )
                 }
-            } catch (e: Exception) {
-                null
-            }
         }
     }
 
@@ -129,8 +145,12 @@ private fun ReaderSuccess(
     val sheetState = rememberModalBottomSheetState()
 
     var highlightToDelete by remember { mutableStateOf<Decoration?>(null) }
+    LaunchedEffect(screenState.searchMatch) {
+        if (screenState.searchMatch != null) { delay(8000); screenState.searchMatch = null }
+    }
 
     LaunchedEffect(state.bookId) {
+        quickViewModel.observeDiscussion(state.bookId)
         quickViewModel.observeIndexingStatus(state.bookId)
     }
 
@@ -217,6 +237,7 @@ private fun ReaderSuccess(
             ReadiumEngine(
                 modifier = engineModifier,
                 publication = state.publication,
+                structure = state.structure,
                 bookId = state.bookId,
                 initialLocation = screenState.currentLocator ?: state.initialLocator,
                 targetJumpHref = screenState.targetJumpHref,
@@ -226,18 +247,24 @@ private fun ReaderSuccess(
                 preferences = preferences.epub.copy(scroll = engineScrollMode),
                 commands = viewModel.commands,
                 isPro = isPro,
-                isAiraReady = isReady,
-                decorations = activeDecorations,
+                isAiraReady = true,
+                decorations = activeDecorations + listOfNotNull(screenState.searchMatch?.let {
+                    Decoration("search-match", it, Decoration.Style.Highlight(tint = android.graphics.Color.rgb(255, 193, 7)))
+                }),
                 onTap = { screenState.toggleMenu() },
                 onAskAira = { text, locator ->
                     screenState.showAira(text, locator)
-                    quickViewModel.clearResponse()
+                    quickViewModel.selectPassage(state.bookId, text,
+                        com.yugentech.quill.aira.context.ReaderRequestContext(screenState.currentLocator, locator))
                 },
                 onSelectionAction = { locator ->
                     pendingHighlightLocator = locator
                 },
+                rangeActionLabel = if (rangeState.start == null || rangeState.adjustingStart) "Start here" else "End here",
+                hasRangeDraft = rangeState.start != null || rangeState.end != null,
+                onRangeSelection = { locator -> screenState.dismissAira(); viewModel.selectRangeEndpoint(locator) },
                 onDecorationTapped = { tappedDecoration ->
-                    highlightToDelete = tappedDecoration
+                    if (tappedDecoration.id != "search-match") highlightToDelete = tappedDecoration
                 },
                 onJumpComplete = { screenState.targetJumpHref = null },
                 onSeekComplete = { screenState.pendingSeekProgress = null },
@@ -268,6 +295,7 @@ private fun ReaderSuccess(
             readerOverlayState = screenState.overlayState,
             airaUiState = airaUiState,
             currentSound = viewModel.activeSound.collectAsState().value,
+            isBookmarked = isBookmarked,
             lastSelectedSound = preferences.lastSelectedSound,
             soundEnabled = preferences.soundEnabled,
             onAction = { action ->
@@ -287,6 +315,23 @@ private fun ReaderSuccess(
                         screenState.isMenuVisible = false
                         screenState.showSoundSheet = true
                     }
+                    is ReaderAction.OnSearchClick -> {
+                        screenState.searchOrigin = screenState.currentLocator
+                        screenState.canReturnFromSearch = false
+                        screenState.showSearchSheet = true
+                        screenState.isMenuVisible = false
+                    }
+                    is ReaderAction.OnBookmarkClick -> screenState.currentLocator?.let { locator ->
+                        val existing = bookmarks.firstOrNull { it.locationKey == currentKey }
+                        if (existing == null) viewModel.toggleBookmark(state.bookId, locator)
+                        else {
+                            viewModel.removeBookmark(existing)
+                            bookmarkScope.launch {
+                                if (bookmarkSnackbar.showSnackbar("Bookmark removed", "Undo", duration = androidx.compose.material3.SnackbarDuration.Short) == androidx.compose.material3.SnackbarResult.ActionPerformed)
+                                    viewModel.restoreBookmark(existing)
+                            }
+                        }
+                    }
 
                     is ReaderAction.OnSeek -> {
                         screenState.isExplicitJump = true
@@ -299,19 +344,33 @@ private fun ReaderSuccess(
                         action.isInteracting
 
                     is ReaderAction.OnAskAiraClick -> screenState.showAira(null)
+                    is ReaderAction.OnNewTopic -> { screenState.selectedText = null; screenState.selectedTextLocator = null; quickViewModel.newTopic(state.bookId) }
+                    is ReaderAction.OnSourceJump -> {
+                        com.yugentech.quill.aira.context.parseLocator(action.source.locatorJson)?.let {
+                            screenState.searchOrigin = screenState.currentLocator
+                            screenState.isExplicitJump = true; screenState.targetLocator = it
+                            screenState.canReturnFromSearch = screenState.searchOrigin != null
+                            screenState.dismissAira()
+                        }
+                    }
                     is ReaderAction.OnAiraDismiss -> {
                         screenState.dismissAira()
-                        quickViewModel.clearResponse()
                     }
 
-                    is ReaderAction.OnAiraSend -> quickViewModel.ask(state.bookId, action.question)
+                    is ReaderAction.OnAiraSend -> quickViewModel.ask(state.bookId, action.question, screenState.selectedText,
+                        com.yugentech.quill.aira.context.ReaderRequestContext(screenState.currentLocator, screenState.selectedTextLocator))
                     is ReaderAction.OnQuickAction -> quickViewModel.handleQuickPrompt(
                         state.bookId,
-                        action.prompt
+                        when (val prompt = action.prompt) {
+                            is com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt.SummarizeChapter -> prompt.copy(locatorJson = screenState.currentLocator?.toJSON()?.toString())
+                            is com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt.WhatIsThis -> prompt.copy(locatorJson = screenState.currentLocator?.toJSON()?.toString())
+                            else -> prompt
+                        },
+                        com.yugentech.quill.aira.context.ReaderRequestContext(screenState.currentLocator, screenState.selectedTextLocator)
                     )
 
                     is ReaderAction.OnStopGeneration -> quickViewModel.stopGeneration()
-                    is ReaderAction.OnClearSelection -> screenState.selectedText = null
+                    is ReaderAction.OnClearSelection -> { screenState.selectedText = null; screenState.selectedTextLocator = null }
                     is ReaderAction.OnSoundQuickToggle -> {
                         viewModel.quickToggleSound()
                     }
@@ -319,6 +378,20 @@ private fun ReaderSuccess(
             }
         )
 
+        androidx.compose.material3.SnackbarHost(bookmarkSnackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).zIndex(3f))
+        if (rangeState.start != null && rangeState.range == null) {
+            com.yugentech.quill.reader.ui.components.range.RangeSelectionBar(rangeState, viewModel::cancelRange, viewModel::adjustRangeStart,
+                Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 80.dp).zIndex(3f))
+        }
+        if (screenState.canReturnFromSearch) {
+            androidx.compose.foundation.layout.Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 90.dp).zIndex(2f)) {
+                androidx.compose.material3.FilledTonalButton(onClick = {
+                    screenState.isExplicitJump = true; screenState.targetLocator = screenState.searchOrigin
+                    screenState.canReturnFromSearch = false; screenState.searchMatch = null
+                }) { Text("Return to reading") }
+                androidx.compose.material3.TextButton(onClick = { screenState.canReturnFromSearch = false }) { Text("Dismiss") }
+            }
+        }
         // Theme-change overlay: drawn on top of everything (zIndex 2) so it covers both
         // the status-bar strip (Compose) and the WebView area during the rendering gap.
         if (overlayAlpha > 0f) {
@@ -349,6 +422,19 @@ private fun ReaderSuccess(
         )
     }
 
+    if (rangeState.range != null) {
+        com.yugentech.quill.reader.ui.components.range.RangePreview(rangeState, viewModel::cancelRange,
+            viewModel::adjustRangeStart, viewModel::adjustRangeEnd,
+            onExplain = { range ->
+                val request = com.yugentech.quill.aira.context.ReaderRequestContext(screenState.currentLocator, range.startLocator,
+                    endLocator = range.endLocator)
+                screenState.showAira(range.text, range.startLocator)
+                quickViewModel.selectPassage(state.bookId, range.text, request)
+                  quickViewModel.handleQuickPrompt(state.bookId,
+                      com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt.ExplainThis(range.text), request)
+                viewModel.cancelRange()
+            }, onSave = { viewModel.saveRangeHighlight(state.bookId) }, onNote = viewModel::setRangeNote, onColor = viewModel::setRangeColor)
+    }
     if (highlightToDelete != null) {
         AlertDialog(
             onDismissRequest = { highlightToDelete = null },
@@ -367,7 +453,7 @@ private fun ReaderSuccess(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteHighlight(highlightToDelete!!.id)
+                        viewModel.deleteHighlight(highlightToDelete!!.extras["highlightId"] as? String ?: highlightToDelete!!.id)
                         highlightToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -390,9 +476,17 @@ private fun ReaderSuccess(
 
     if (screenState.showTocSheet) {
         TocSheet(
-            publication = state.publication,
-            allPositions = state.allPositions,
-            currentHref = screenState.currentLocator?.href?.toString(),
+            structure = state.structure,
+            currentLocator = screenState.currentLocator,
+            bookmarks = bookmarks,
+            onBookmarkJump = { bookmark ->
+                com.yugentech.quill.reader.ui.components.bookmark.bookmarkLocator(bookmark)?.let {
+                    screenState.isExplicitJump = true; screenState.targetLocator = it; screenState.showTocSheet = false
+                }
+            },
+            onBookmarkRename = viewModel::renameBookmark,
+            onBookmarkRemove = viewModel::removeBookmark,
+            onBookmarkRestore = viewModel::restoreBookmark,
             onDismiss = { screenState.showTocSheet = false },
             onTocItemClick = { href ->
                 screenState.isExplicitJump = true
@@ -402,6 +496,14 @@ private fun ReaderSuccess(
         )
     }
 
+    if (screenState.showSearchSheet) {
+        com.yugentech.quill.reader.ui.components.search.SearchSheet(state.publication, state.structure, screenState.searchOrigin,
+            onResult = { locator ->
+                screenState.isExplicitJump = true; screenState.targetLocator = locator
+                screenState.searchMatch = locator; screenState.showSearchSheet = false
+                screenState.canReturnFromSearch = screenState.searchOrigin != null
+            }, onDismiss = { screenState.showSearchSheet = false })
+    }
     if (screenState.showSoundSheet) {
         val activeSound by viewModel.activeSound.collectAsState()
         val selectedSound = if (activeSound != BackgroundSound.NONE) activeSound else preferences.lastSelectedSound

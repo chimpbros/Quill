@@ -33,6 +33,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -72,10 +78,46 @@ fun BookDetailsScreen(
     val categories by bookDetailsViewModel.categories.collectAsStateWithLifecycle()
 
     val book = uiState.book ?: return
-    val chapters = uiState.chapters
+    val savedChapters = uiState.chapters
     val isDescriptionExpanded = uiState.isDescriptionExpanded
     val downloadStatus = book.downloadStatus
     val currentCategory = book.userCategory ?: "Library"
+    val bookmarkDao = koinInject<com.yugentech.quill.database.dao.BookmarkDao>()
+    val extractor = koinInject<com.yugentech.quill.aira.rag.EpubTextExtractor>()
+    val bookmarks by remember(book.id) { bookmarkDao.observe(book.id) }.collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val structure by produceState<com.yugentech.quill.aira.rag.PublicationStructure?>(null, book.localFilePath) {
+        value = null
+        val path = book.localFilePath
+        if (path != null) try { value = extractor.structure(path) }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { value = null }
+    }
+    val currentHref = remember(structure, book.lastLocatorJson) {
+        book.lastLocatorJson?.let { json -> runCatching { org.readium.r2.shared.publication.Locator.fromJSON(org.json.JSONObject(json)) }.getOrNull() }
+            ?.let { structure?.active(it)?.href }
+    }
+    val chapters = structure?.sections?.mapIndexed { index, section ->
+        val hasChildren = structure?.sections?.any { it.parentId == section.id } == true
+        com.yugentech.quill.database.model.Chapter(section.title, section.href, index,
+            depth = if (hasChildren) section.depth.coerceAtMost(1) else 2)
+    } ?: savedChapters
+    var showBookmarks by remember { mutableStateOf(false) }
+    if (showBookmarks) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showBookmarks = false },
+            modifier = Modifier.fillMaxSize(), sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Text("Bookmarks", Modifier.padding(24.dp), style = MaterialTheme.typography.headlineSmall)
+            com.yugentech.quill.reader.ui.components.bookmark.BookmarkList(bookmarks,
+                onJump = { bookmark ->
+                    if (book.localFilePath == null) android.widget.Toast.makeText(context, "Download the book to open this bookmark.", android.widget.Toast.LENGTH_SHORT).show()
+                    else { showBookmarks = false; context.startActivity(com.yugentech.quill.reader.ReaderActivity.createIntent(context, book.id, locatorJson = bookmark.locatorJson)) }
+                },
+                onRename = { id, label -> scope.launch { bookmarkDao.rename(id, label.trim().takeIf { it.isNotEmpty() }) } },
+                onRemove = { bookmark -> scope.launch { bookmarkDao.delete(bookmark.id) } },
+                onRestore = { bookmark -> scope.launch { bookmarkDao.insert(bookmark) } }, structure = structure)
+        }
+    }
 
     var showCategorySheet by remember { mutableStateOf(false) }
     var showRemoveLibraryWarningDialog by remember { mutableStateOf(false) }
@@ -135,7 +177,8 @@ fun BookDetailsScreen(
                 onResetProgressClick = { showResetDialog = true },
                 scrollBehavior = scrollBehavior,
                 onHighlightsClick = { onHighlightsClick(book.id) },
-                onVisualsClick = { onVisualsClick(book.id) }
+                onVisualsClick = { onVisualsClick(book.id) },
+                onBookmarksClick = { showBookmarks = true }
             )
         },
         floatingActionButton = {
@@ -184,6 +227,7 @@ fun BookDetailsScreen(
                 }
 
                 item { Spacer(modifier = Modifier.height(8.dp)) }
+                item { TextButton(onClick = { showBookmarks = true }, modifier = Modifier.padding(horizontal = 24.dp)) { Text("Bookmarks (${bookmarks.size})") } }
 
                 item {
                     AnimatedVisibility(
@@ -225,6 +269,7 @@ fun BookDetailsScreen(
                 if (chapters.isNotEmpty()) {
                     chaptersListSection(
                         chapters = chapters,
+                        currentChapterHref = currentHref,
                         onChapterClick = { href -> onReadClick(book.id, href) },
                         modifier = Modifier.padding(horizontal = 24.dp)
                     )

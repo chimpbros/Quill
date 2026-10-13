@@ -38,9 +38,9 @@ class DirectAiGateway(val settings:ConnectionStore, val provider:HttpAiProvider,
         }
         try { generation.join() } finally { watcher.cancel() }
     }
-    suspend fun classify(instructions:String,query:String):String {
+    suspend fun classify(instructions:String,query:String,history:List<AiMessage> = emptyList()):String {
         val connection=settings.selected() ?: throw AiException(AiErrorKind.SETUP,"Choose a text connection in More → AI Connections.")
-        return whileUnchanged { provider.classify(connection,TextRequest(instructions,listOf(AiMessage("user",query)))) }
+        return whileUnchanged { provider.classify(connection,TextRequest(instructions,history + AiMessage("user",query))) }
     }
     suspend fun image(prompt:String):ImageArtifact {
         val connection=settings.selected("image") ?: throw AiException(AiErrorKind.SETUP,"Choose an image provider and model in More → AI Connections.")

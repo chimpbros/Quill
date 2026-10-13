@@ -46,12 +46,17 @@ import com.yugentech.quill.reader.ui.components.aira.components.TypewriterText
 fun MessageItem(
     message: ChatMessage,
     onTypingStateChange: (Boolean) -> Unit = {},
-    onSpeakClick: (String) -> Unit = {}
+    onSpeakClick: (String) -> Unit = {},
+    onSourceJump: ((com.yugentech.quill.aira.context.SourceExcerpt) -> Unit)? = null
 ) {
     val isAira = message.isFromAira
     val containerWidth = LocalWindowInfo.current.containerSize.width
     val maxWidth = (containerWidth * 0.78f).dp
     val clipboardManager = LocalClipboardManager.current
+    var source by remember { mutableStateOf<com.yugentech.quill.aira.context.SourceExcerpt?>(null) }
+    var showSources by remember { mutableStateOf(false) }
+    if (showSources) com.yugentech.quill.reader.ui.components.aira.SourcesSheet(message.sources, { showSources = false }, onSourceJump)
+    source?.let { com.yugentech.quill.reader.ui.components.aira.SourceExcerptDialog(it, { source = null }, onSourceJump) }
 
     if (isAira) {
         val isThinking = message.isNew && message.text.isBlank()
@@ -98,6 +103,8 @@ fun MessageItem(
                         }
                     } else {
                         TypewriterText(
+                            sources = message.sources,
+                            onSourceClick = { source = it },
                             text = message.text,
                             resetKey = message.stableKey,
                             startRevealed = !message.isNew,
@@ -111,6 +118,7 @@ fun MessageItem(
                         )
 
                         if (isRevealed) {
+                            if (message.sources.isNotEmpty()) androidx.compose.material3.TextButton(onClick = { showSources = true }) { Text("Sources") }
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Row(

@@ -13,6 +13,7 @@ sealed class ReaderUiState {
         val publication: Publication,
         val totalPages: Int,
         val allPositions: List<Locator>,
-        val initialLocator: Locator?
+        val initialLocator: Locator?,
+        val structure: com.yugentech.quill.aira.rag.PublicationStructure
     ) : ReaderUiState()
 }

@@ -26,7 +26,8 @@ fun AiraChatHistory(
     listState: LazyListState,
     bottomPadding: Dp,
     modifier: Modifier = Modifier,
-    onSpeakClick: (String) -> Unit = {}
+    onSpeakClick: (String) -> Unit = {},
+    onSourceJump: ((com.yugentech.quill.aira.context.SourceExcerpt) -> Unit)? = null
 ) {
     var isVisuallyTyping by remember { mutableStateOf(false) }
 
@@ -69,14 +70,16 @@ fun AiraChatHistory(
                             text = message.content,
                             isFromAira = isAira,
                             isNew = isLiveGeneration,
-                            stableKey = "${uiState.messages.size - index}_${message.role}"
+                            stableKey = "${uiState.messages.size - index}_${message.role}",
+                            sources = message.sources
                         ),
                         onTypingStateChange = { isTyping ->
                             if (index == 0 && isAira) {
                                 isVisuallyTyping = isTyping
                             }
                         },
-                        onSpeakClick = onSpeakClick
+                        onSpeakClick = onSpeakClick,
+                        onSourceJump = onSourceJump
                     )
                 }
             }

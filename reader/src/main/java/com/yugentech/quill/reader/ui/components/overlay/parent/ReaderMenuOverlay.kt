@@ -49,6 +49,7 @@ fun ReaderMenuOverlay(
     currentSound: BackgroundSound = BackgroundSound.NONE,
     lastSelectedSound: BackgroundSound = BackgroundSound.RAIN,
     soundEnabled: Boolean = true,
+    isBookmarked: Boolean = false,
     onAction: (ReaderAction) -> Unit
 ) {
     var sliderPosition by remember { mutableFloatStateOf(readerOverlayState.progress) }
@@ -77,6 +78,9 @@ fun ReaderMenuOverlay(
                 bookTitle = readerOverlayState.bookTitle,
                 onBackClick = { onAction(ReaderAction.OnBackClick) },
                 onTocClick = { onAction(ReaderAction.OnTocClick) },
+                isBookmarked = isBookmarked,
+                onSearchClick = { onAction(ReaderAction.OnSearchClick) },
+                onBookmarkClick = { onAction(ReaderAction.OnBookmarkClick) },
                 onSoundClick = { onAction(ReaderAction.OnSoundClick) },
                 onSettingsClick = { onAction(ReaderAction.OnSettingsClick) }
             )
@@ -92,6 +96,8 @@ fun ReaderMenuOverlay(
             onSendMessage = { onAction(ReaderAction.OnAiraSend(it)) },
             onDismiss = { onAction(ReaderAction.OnAiraDismiss) },
             onStop = { onAction(ReaderAction.OnStopGeneration) },
+            onNewTopic = { onAction(ReaderAction.OnNewTopic) },
+            onSourceJump = { onAction(ReaderAction.OnSourceJump(it)) },
             onClearSelection = { onAction(ReaderAction.OnClearSelection) }
         )
 
@@ -130,7 +136,7 @@ fun ReaderMenuOverlay(
                     }
 
                     AnimatedVisibility(
-                        visible = airaUiState.isReady,
+                        visible = true,
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {

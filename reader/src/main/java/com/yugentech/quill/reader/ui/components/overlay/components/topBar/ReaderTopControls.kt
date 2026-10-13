@@ -1,121 +1,38 @@
 package com.yugentech.quill.reader.ui.components.overlay.components.topBar
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.FormatSize
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.text.style.TextOverflow
-
-import com.yugentech.theme.service.HapticService
-import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderTopBar(
-    isVisible: Boolean,
-    bookTitle: String,
-    onBackClick: () -> Unit,
-    onTocClick: () -> Unit,
-    onSoundClick: () -> Unit,
-    onSettingsClick: () -> Unit
-) {
-    val haptic = koinInject<HapticService>()
-    val view = LocalView.current
-
-    AnimatedVisibility(
-        visible = isVisible,
-        enter = slideInVertically(
-            initialOffsetY = { -it },
-            animationSpec = tween(300, easing = FastOutSlowInEasing)
-        ),
-        exit = slideOutVertically(
-            targetOffsetY = { -it },
-            animationSpec = tween(250, easing = FastOutSlowInEasing)
-        )
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLow
-        ) {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = bookTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            haptic.performHaptic(view)
-                            onBackClick()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+fun ReaderTopBar(isVisible: Boolean, bookTitle: String, onBackClick: () -> Unit,
+    onTocClick: () -> Unit, onSoundClick: () -> Unit, onSettingsClick: () -> Unit,
+    isBookmarked: Boolean, onSearchClick: () -> Unit, onBookmarkClick: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    // Keep the popup's anchor alive when the reader's auto-hide timer expires.
+    AnimatedVisibility(isVisible || menu, enter = slideInVertically { -it }, exit = slideOutVertically { -it }) {
+        TopAppBar(title = { Text(bookTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            navigationIcon = { IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+            actions = {
+                IconButton(onClick = onTocClick) { Icon(Icons.Default.Menu, "Chapters and bookmarks") }
+                IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, "Search in book") }
+                IconButton(onClick = onBookmarkClick) { Icon(if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    if (isBookmarked) "Remove bookmark here" else "Bookmark this place") }
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Reader options") }
+                    DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Reading settings") }, onClick = { menu = false; onSettingsClick() })
+                        DropdownMenuItem(text = { Text("Ambient sounds") }, onClick = { menu = false; onSoundClick() })
                     }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            haptic.performHaptic(view)
-                            onTocClick()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = "TOC"
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            haptic.performHaptic(view)
-                            onSoundClick()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = "Ambient Sounds"
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            haptic.performHaptic(view)
-                            onSettingsClick()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FormatSize,
-                            contentDescription = "Settings"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
-            )
-        }
+                }
+            }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow))
     }
 }

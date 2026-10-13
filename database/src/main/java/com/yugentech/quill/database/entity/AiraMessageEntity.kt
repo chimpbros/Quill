@@ -23,7 +23,11 @@ data class AiraMessageEntity(
     val role: AiraMessageRole,
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val chapterIndex: Int? = null
+    val chapterIndex: Int? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val requiresSpoilerPermission: Boolean = false,
+    val topicId: String? = null,
+    val boundaryLocatorJson: String? = null,
+    val sourcesJson: String? = null
 )
 
 enum class AiraMessageRole {

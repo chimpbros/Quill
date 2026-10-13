@@ -196,10 +196,10 @@ fun HighlightCard(
     onCardClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    val parsedData = remember(highlight.locatorJson) {
+    val parsedData = remember(highlight.locatorJson, highlight.selectedText) {
         try {
             val json = JSONObject(highlight.locatorJson)
-            val text = json.optJSONObject("text")?.optString("highlight") ?: "Content unreadable"
+            val text = highlight.selectedText ?: json.optJSONObject("text")?.optString("highlight") ?: "Content unreadable"
 
             val chapter = json.optString("title").let { it.ifBlank { "Unknown Chapter" } }
             val position = json.optJSONObject("locations")?.optInt("position", -1) ?: -1

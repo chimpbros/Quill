@@ -28,6 +28,31 @@ class QuickViewModel(
     val uiState = _uiState.asStateFlow()
 
     private var activeJob: Job? = null
+    private var discussionJob: Job? = null
+    private var selectionJob: Job? = null
+
+    fun observeDiscussion(bookId: String) {
+        discussionJob?.cancel()
+        discussionJob = viewModelScope.launch {
+            airaChatRepository.observeDiscussion(bookId).collect { discussion ->
+                _uiState.update { state -> state.copy(discussion = discussion,
+                    response = if (!state.isLoading) discussion?.lastResponse else state.response,
+                    sources = discussion?.sources.orEmpty()) }
+            }
+        }
+    }
+
+    fun selectPassage(bookId: String, text: String, request: com.yugentech.quill.aira.context.ReaderRequestContext) {
+        clearResponse()
+        selectionJob?.cancel()
+        selectionJob = viewModelScope.launch { airaChatRepository.selectPassage(bookId, text, request) }
+    }
+
+    fun newTopic(bookId: String) {
+        clearResponse()
+        selectionJob?.cancel()
+        selectionJob = viewModelScope.launch { airaChatRepository.newTopic(bookId) }
+    }
 
     init {
 
@@ -46,7 +71,8 @@ class QuickViewModel(
         }
     }
 
-    fun ask(bookId: String, query: String) {
+    fun ask(bookId: String, query: String, selectedText: String? = null,
+        request: com.yugentech.quill.aira.context.ReaderRequestContext = com.yugentech.quill.aira.context.ReaderRequestContext()) {
         if(!gateway.configured()) { _uiState.update { it.copy(error="Choose a text connection in More → AI Connections.") };return }
         if (query.isBlank() || _uiState.value.isLoading) return
         if (!checkQuota()) return
@@ -56,7 +82,8 @@ class QuickViewModel(
         activeJob = viewModelScope.launch {
             var hasConsumedQuota = false
             try {
-                airaChatRepository.ask(bookId, query).collect { response ->
+                selectionJob?.join()
+                airaChatRepository.ask(bookId, query, selectedText, request).collect { response ->
                     handleResponseStream(response) {
 
                     }
@@ -67,7 +94,8 @@ class QuickViewModel(
         }
     }
 
-    fun handleQuickPrompt(bookId: String, intent: QuickPrompt) {
+    fun handleQuickPrompt(bookId: String, intent: QuickPrompt,
+        request: com.yugentech.quill.aira.context.ReaderRequestContext = com.yugentech.quill.aira.context.ReaderRequestContext()) {
         val slot=if(intent is QuickPrompt.VisualizeThis) "image" else "text"
         if(!gateway.configured(slot)) { _uiState.update { it.copy(error="Choose a $slot connection in More → AI Connections.") };return }
         if (_uiState.value.isLoading) return
@@ -78,7 +106,8 @@ class QuickViewModel(
         activeJob = viewModelScope.launch {
             var hasConsumedQuota = false
             try {
-                quickRepository.ask(bookId, intent).collect { response ->
+                selectionJob?.join()
+                quickRepository.ask(bookId, intent, request).collect { response ->
                     handleResponseStream(response) {
                         if (!hasConsumedQuota) {
                             hasConsumedQuota = true
@@ -94,6 +123,8 @@ class QuickViewModel(
 
     private fun handleResponseStream(response: AiraResponse, onFirstSuccess: () -> Unit) {
         when (response) {
+            is AiraResponse.Clarification -> _uiState.update { it.copy(clarification = response, response = response.question,
+                isLoading = false, isStreaming = false) }
             is AiraResponse.Partial, is AiraResponse.Success -> {
                 val responseText = if(response is AiraResponse.Partial) response.text else (response as AiraResponse.Success).text
                 onFirstSuccess()
@@ -103,7 +134,8 @@ class QuickViewModel(
                         isStreaming = response is AiraResponse.Partial,
                         response = responseText,
                         imagePath = null,
-                        error = null
+                        error = null,
+                        sources = if (response is AiraResponse.Success) response.sources else it.sources
                     )
                 }
             }
@@ -142,12 +174,24 @@ class QuickViewModel(
                 response = EMPTY,
                 imagePath = null,
                 isGeneratingImage = isGeneratingImage,
-                error = null
+                error = null,
+                sources = emptyList(),
+                clarification = null
             )
         }
     }
 
     private fun checkQuota(): Boolean = true
+
+    fun chooseScope(choiceId: String) {
+        val pending = _uiState.value.clarification ?: return
+        prepareForNewQuery()
+        activeJob = viewModelScope.launch {
+            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect { handleResponseStream(it) {} } }
+            finally { _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
+        }
+    }
+    fun dismissClarification() { _uiState.update { it.copy(clarification = null) } }
 
 
 
@@ -175,6 +219,7 @@ class QuickViewModel(
                 isLoading = false,
                 isStreaming = false,
                 response = null,
+                clarification = null,
                 imagePath = null,
                 error = null
             )

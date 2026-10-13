@@ -43,6 +43,11 @@ class AiraViewModel(
         observeBilling()
         observeBookAndIndexing()
         observeChatHistory()
+        viewModelScope.launch {
+            airaChatRepository.observeDiscussion(bookId).collectLatest { discussion ->
+                _uiState.update { it.copy(discussion = discussion) }
+            }
+        }
     }
 
     private fun observeBilling() {
@@ -62,7 +67,8 @@ class AiraViewModel(
                     bookAuthor = book?.author ?: EMPTY,
                     lastChapterTitle = book?.lastChapterTitle,
                     hasStartedReading = book?.lastChapterTitle != null,
-                    spoilerLockEnabled = book?.spoilerLockEnabled ?: true
+                    spoilerLockEnabled = book?.spoilerLockEnabled ?: true,
+                    readingLocatorJson = book?.lastLocatorJson
                 )
             }
         }
@@ -146,7 +152,8 @@ class AiraViewModel(
                 messages = it.messages + userMessage + initialAiraMessage,
                 isLoading = true,
                 isStreaming = false,
-                error = null
+                error = null,
+                clarification = null
             )
         }
 
@@ -164,6 +171,22 @@ class AiraViewModel(
                 isCurrentlyStreaming = false
                 _uiState.update { it.copy(isLoading = false, isStreaming = false) }
             }
+        }
+    }
+
+    fun newTopic() {
+        resetStreamingStates()
+        viewModelScope.launch { airaChatRepository.newTopic(bookId) }
+    }
+
+    fun expandContext() {
+        if (_uiState.value.isLoading) return
+        isCurrentlyStreaming = true
+        _uiState.update { it.copy(isLoading = true, error = null,
+            messages = it.messages + AiraMessage(AiraMessage.Role.USER, "Include more preceding context.") + AiraMessage(AiraMessage.Role.AIRA, "")) }
+        generationJob = viewModelScope.launch {
+            try { airaChatRepository.expandContext(bookId).collect { handleStreamResponse(it) } }
+            finally { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
         }
     }
 
@@ -191,7 +214,7 @@ class AiraViewModel(
 
     fun clearChat() {
         resetStreamingStates()
-        _uiState.update { it.copy(messages = emptyList(), error = null) }
+        _uiState.update { it.copy(messages = emptyList(), error = null, clarification = null) }
         viewModelScope.launch {
             airaChatRepository.clearMessagesForBook(bookId)
         }
@@ -209,6 +232,8 @@ class AiraViewModel(
 
     private fun handleStreamResponse(response: AiraResponse) {
         when (response) {
+            is AiraResponse.Clarification -> _uiState.update { it.copy(clarification = response, isLoading = false,
+                isStreaming = false, messages = it.messages.dropLast(1) + AiraMessage(AiraMessage.Role.AIRA, response.question)) }
             is AiraResponse.Partial, is AiraResponse.Success -> {
                 val responseText = if(response is AiraResponse.Partial) response.text else (response as AiraResponse.Success).text
                 _uiState.update { airaUiState ->
@@ -216,7 +241,8 @@ class AiraViewModel(
 
                     if (updatedMessages.isNotEmpty() && updatedMessages.last().role == AiraMessage.Role.AIRA) {
                         updatedMessages[updatedMessages.lastIndex] = updatedMessages.last().copy(
-                            content = responseText
+                                    content = responseText,
+                                    sources = if (response is AiraResponse.Success) response.sources else emptyList()
                         )
                     }
 
@@ -254,4 +280,16 @@ class AiraViewModel(
             )
         }
     }
+
+    fun chooseScope(choiceId: String) {
+        val pending = _uiState.value.clarification ?: return
+        isCurrentlyStreaming = true
+        _uiState.update { it.copy(clarification = null, isLoading = true, error = null,
+            messages = it.messages.dropLast(1) + AiraMessage(AiraMessage.Role.AIRA, "")) }
+        generationJob = viewModelScope.launch {
+            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect(::handleStreamResponse) }
+            finally { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
+        }
+    }
+    fun dismissClarification() { _uiState.update { it.copy(clarification = null) } }
 }

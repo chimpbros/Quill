@@ -65,7 +65,6 @@ val airaModule = module {
     single<BookChatRepository> {
         BookChatRepositoryImpl(
             chatService = get(),
-            ragRetriever = get(),
             epubTextExtractor = get()
         )
     }
@@ -85,8 +84,7 @@ val airaModule = module {
             epubTextExtractor = get(),
             actionService = get(),
             visualizeService = get(),
-            airaChatService = get(),
-            ragRetriever = get()
+            airaChatService = get()
         )
     }
 
@@ -97,7 +95,8 @@ val airaModule = module {
             bookChatRepository = get(),
             bookDao = get(),
             airaMessageDao = get(),
-            localProfile = get()
+            localProfile = get(),
+            discussionDao = get<com.yugentech.quill.database.database.AppDatabase>().airaDiscussionDao()
         )
     }
 

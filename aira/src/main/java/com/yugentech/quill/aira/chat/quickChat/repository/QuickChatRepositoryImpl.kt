@@ -7,18 +7,17 @@ import com.yugentech.quill.aira.chat.quickChat.model.QuickChatType
 import com.yugentech.quill.aira.chat.quickChat.prompt.QuickPrompt
 import com.yugentech.quill.aira.chat.quickChat.service.QuickChatService
 import com.yugentech.quill.aira.chat.quickChat.service.VisualizeService
-import com.yugentech.quill.aira.chat.quickChat.util.QuickBuilder
 import com.yugentech.quill.aira.rag.EpubTextExtractor
-import com.yugentech.quill.aira.rag.RagRetriever
 import com.yugentech.quill.aira.response.AiraResponse
 import com.yugentech.quill.aira.service.AiraChatService
+import com.yugentech.quill.aira.context.*
+import com.yugentech.quill.aira.intent.model.*
 import com.yugentech.quill.database.dao.AiraMessageDao
 import com.yugentech.quill.database.dao.BookDao
 import com.yugentech.quill.database.dao.VisualDao
 import com.yugentech.quill.database.entity.AiraMessageEntity
 import com.yugentech.quill.database.entity.AiraMessageRole
 import com.yugentech.quill.database.entity.VisualEntity
-import com.yugentech.quill.database.model.RetrievedChunk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -34,22 +33,82 @@ class QuickChatRepositoryImpl(
     private val epubTextExtractor: EpubTextExtractor,
     private val actionService: QuickChatService,
     private val visualizeService: VisualizeService,
-    private val airaChatService: AiraChatService,
-    private val ragRetriever: RagRetriever
+    private val airaChatService: AiraChatService
 ) : QuickChatRepository {
 
-    override suspend fun ask(bookId: String, quickPrompt: QuickPrompt): Flow<AiraResponse> = flow {
+    override suspend fun ask(bookId: String, quickPrompt: QuickPrompt, request: ReaderRequestContext): Flow<AiraResponse> = flow {
         val book = bookDao.getBookEntity(bookId)
         if (book == null) {
             emit(AiraResponse.Error("Book not found."))
             return@flow
         }
+        if (quickPrompt is QuickPrompt.IncludeMoreContext) {
+            emitAll(airaChatService.expandContext(bookId)); return@flow
+        }
+        if (quickPrompt is QuickPrompt.CatchMeUp || quickPrompt is QuickPrompt.ExplainConversation) {
+            emitAll(airaChatService.scene(bookId, (quickPrompt as? QuickPrompt.ExplainConversation)?.text,
+                request, quickPrompt is QuickPrompt.ExplainConversation)); return@flow
+        }
+        val quickSelection = (quickPrompt as? QuickPrompt.ExplainThis)?.text
+        val topic = if (quickPrompt !is QuickPrompt.CustomQuestion) airaChatService.prepareDiscussion(bookId,
+            quickSelection, request.copy(freshTopic = quickSelection == null)) else null
+
+        // Grounded chips share precise reading boundaries and literal retrieval with typed chat.
+        val task = when (quickPrompt) {
+            is QuickPrompt.WhoAreTheCharacters, is QuickPrompt.RecallCharacter -> QueryIntent.CHARACTER_PROFILE
+            is QuickPrompt.RecentRole -> QueryIntent.CHARACTER_RECENT
+            is QuickPrompt.JourneySoFar -> QueryIntent.CHARACTER_ARC
+            is QuickPrompt.WhatAreTheThemes -> QueryIntent.THEME_ANALYSIS
+            is QuickPrompt.WhatIsTheSignificance -> QueryIntent.SIGNIFICANCE
+            else -> null
+        }
+        if (task != null) {
+            val name = when (quickPrompt) {
+                is QuickPrompt.RecallCharacter -> quickPrompt.name
+                is QuickPrompt.RecentRole -> quickPrompt.name
+                is QuickPrompt.JourneySoFar -> quickPrompt.name
+                else -> null
+            }
+            val selected = (quickPrompt as? QuickPrompt.WhatIsTheSignificance)?.text
+            val scope = when (quickPrompt) {
+                is QuickPrompt.WhoAreTheCharacters -> RequestedScope.READ_SO_FAR
+                is QuickPrompt.WhatAreTheThemes -> RequestedScope.CURRENT_CHAPTER
+                is QuickPrompt.WhatIsTheSignificance -> RequestedScope.PASSAGE
+                else -> RequestedScope.RELEVANT_PASSAGES
+            }
+            val query = quickPrompt.toHistoryStatement()
+            emitAll(airaChatService.askBook(bookId, query, selected, request,
+                Intent.BookRelated(listOf(selected ?: name ?: query), listOfNotNull(name), emptyList(), task,
+                    characterName = name, plan = ContextPlan(scope))))
+            return@flow
+        }
+        if (quickPrompt is QuickPrompt.SummarizeChapter) {
+            val locator = request.currentLocator ?: (quickPrompt.locatorJson ?: book.lastLocatorJson)?.let { json ->
+                runCatching { org.readium.r2.shared.publication.Locator.fromJSON(org.json.JSONObject(json)) }.getOrNull()
+            }
+            val navigation = book.localFilePath?.let { epubTextExtractor.structure(it) }
+            if (navigation != null && !navigation.isPrecise(locator) && navigation.active(locator)?.let { active ->
+                navigation.sections.any { it.parentId == active.id }
+            } == true) {
+                emitAll(airaChatService.askBook(bookId, "Can you summarize this chapter?", null, request.copy(currentLocator = locator),
+                    Intent.BookRelated(listOf("Current chapter"), emptyList(), emptyList(), QueryIntent.CHAPTER_SUMMARY,
+                        plan = ContextPlan(RequestedScope.CURRENT_CHAPTER))))
+                return@flow
+            }
+        }
 
         val payload: QuickChatPayload = when (quickPrompt) {
+            is QuickPrompt.CatchMeUp, is QuickPrompt.ExplainConversation, is QuickPrompt.IncludeMoreContext -> error("Scene action must be routed above")
             is QuickPrompt.SummarizeChapter -> {
                 val localFilePath = book.localFilePath
                 val chapter = localFilePath?.let {
-                    epubTextExtractor.extractChapter(it, quickPrompt.chapterIndex)
+                    val locator = request.currentLocator ?: (quickPrompt.locatorJson ?: book.lastLocatorJson)?.let { json ->
+                        runCatching { org.readium.r2.shared.publication.Locator.fromJSON(org.json.JSONObject(json)) }.getOrNull()
+                    }
+                    val structure = epubTextExtractor.structure(it)
+                    val section = structure.active(locator)
+                    if (section != null) com.yugentech.quill.aira.rag.ChapterText(section.start.spine, section.title, structure.text(section))
+                    else epubTextExtractor.extractChapter(it, quickPrompt.chapterIndex)
                 }
                 if (chapter == null) {
                     emit(AiraResponse.Error("No content found for this chapter."))
@@ -63,113 +122,9 @@ class QuickChatRepositoryImpl(
                 )
             }
 
-            is QuickPrompt.WhoAreTheCharacters -> {
-                // The default topPassages (3 anchors, each expanded to only its immediate
-                // neighbors) leaves barely a handful of small chunks to cover every character in
-                // the book -- enough to name people, not enough to say anything real about them.
-                // A much larger budget gives each character a real chance at more than one
-                // mention to draw a description from.
-                val retrieved = ragRetriever.retrieve(
-                    bookId = bookId,
-                    query = "characters people names persons introduced",
-                    topPassages = 40,
-                    spoilerLockEnabled = true
-                )
-                QuickChatPayload(
-                    actionType = QuickChatType.WHO_ARE_CHARACTERS,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = QuickBuilder.buildContextBlock(retrieved)
-                )
-            }
-
-            is QuickPrompt.RecallCharacter -> {
-                val retrieved = ragRetriever.retrieveForRecallCharacter(
-                    bookId = bookId,
-                    characterName = quickPrompt.name,
-                    spoilerLockEnabled = true
-                )
-                if (retrieved.isEmpty()) {
-                    emit(AiraResponse.Error("I haven't encountered \"${quickPrompt.name}\" in what you've read so far."))
-                    return@flow
-                }
-                logRetrievedChunks("RecallCharacter", quickPrompt.name, retrieved)
-                QuickChatPayload(
-                    actionType = QuickChatType.RECALL_CHARACTER,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = QuickBuilder.buildContextBlock(retrieved),
-                    query = quickPrompt.name
-                )
-            }
-
-            is QuickPrompt.RecentRole -> {
-                val retrieved = ragRetriever.retrieveForRecentRole(
-                    bookId = bookId,
-                    characterName = quickPrompt.name,
-                    spoilerLockEnabled = true
-                )
-                if (retrieved.isEmpty()) {
-                    emit(AiraResponse.Error("I haven't encountered \"${quickPrompt.name}\" in what you've read so far."))
-                    return@flow
-                }
-                logRetrievedChunks("RecentRole", quickPrompt.name, retrieved)
-                QuickChatPayload(
-                    actionType = QuickChatType.RECENT_ROLE,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = QuickBuilder.buildContextBlock(retrieved),
-                    query = quickPrompt.name
-                )
-            }
-
-            is QuickPrompt.JourneySoFar -> {
-                val retrieved = ragRetriever.retrieveForJourney(
-                    bookId = bookId,
-                    characterName = quickPrompt.name,
-                    spoilerLockEnabled = true
-                )
-                if (retrieved.isEmpty()) {
-                    emit(AiraResponse.Error("I haven't encountered \"${quickPrompt.name}\" in what you've read so far."))
-                    return@flow
-                }
-                logRetrievedChunks("JourneySoFar", quickPrompt.name, retrieved)
-                QuickChatPayload(
-                    actionType = QuickChatType.JOURNEY_SO_FAR,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = QuickBuilder.buildContextBlock(retrieved),
-                    query = quickPrompt.name
-                )
-            }
-
-            is QuickPrompt.WhatAreTheThemes -> {
-                val localFilePath = book.localFilePath
-                val chapter = localFilePath?.let {
-                    epubTextExtractor.extractChapter(it, quickPrompt.chapterIndex)
-                }
-                if (chapter == null) {
-                    emit(AiraResponse.Error("No content found for this chapter."))
-                    return@flow
-                }
-                // The current chapter stays the anchor -- these retrieved passages from
-                // elsewhere in the book are purely supplementary, giving the model enough to
-                // notice a theme carrying through or recurring rather than treating the
-                // chapter in isolation.
-                val supplementary = ragRetriever.retrieve(
-                    bookId = bookId,
-                    query = "theme meaning symbolism motif central idea",
-                    spoilerLockEnabled = true
-                )
-                QuickChatPayload(
-                    actionType = QuickChatType.WHAT_ARE_THEMES,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = "CURRENT CHAPTER:\n${chapter.text}\n\n" +
-                        "ADDITIONAL CONTEXT FROM ELSEWHERE IN THE BOOK:\n" +
-                        QuickBuilder.buildContextBlock(supplementary)
-                )
-            }
+            is QuickPrompt.WhoAreTheCharacters, is QuickPrompt.RecallCharacter, is QuickPrompt.RecentRole,
+            is QuickPrompt.JourneySoFar, is QuickPrompt.WhatAreTheThemes, is QuickPrompt.WhatIsTheSignificance ->
+                error("Grounded action must be routed above")
 
             is QuickPrompt.DefineWord -> QuickChatPayload(
                 actionType = QuickChatType.DEFINE_WORD,
@@ -179,13 +134,17 @@ class QuickChatRepositoryImpl(
                 query = quickPrompt.word
             )
 
-            is QuickPrompt.WhatIsThis -> QuickChatPayload(
-                actionType = QuickChatType.WHAT_IS_THIS,
-                bookTitle = book.title,
-                bookAuthor = book.author,
-                context = "",
-                query = quickPrompt.word
-            )
+            is QuickPrompt.WhatIsThis -> {
+                val locator = request.currentLocator ?: (quickPrompt.locatorJson ?: book.lastLocatorJson)?.let { json ->
+                    runCatching { org.readium.r2.shared.publication.Locator.fromJSON(org.json.JSONObject(json)) }.getOrNull()
+                }
+                emitAll(airaChatService.askBook(bookId, "What is ${quickPrompt.word} in this book?", quickPrompt.word,
+                    request.copy(currentLocator = locator),
+                    com.yugentech.quill.aira.intent.model.Intent.BookRelated(listOf(quickPrompt.word), emptyList(), emptyList(),
+                        com.yugentech.quill.aira.intent.model.QueryIntent.TERM_EXPLANATION,
+                        plan = com.yugentech.quill.aira.context.ContextPlan(term = quickPrompt.word))))
+                return@flow
+            }
 
             is QuickPrompt.ExplainThis -> QuickChatPayload(
                 actionType = QuickChatType.EXPLAIN_THIS,
@@ -194,41 +153,6 @@ class QuickChatRepositoryImpl(
                 context = quickPrompt.text
             )
 
-            is QuickPrompt.WhatIsTheSignificance -> {
-                // Significance usually hinges on the immediate scene around the highlight --
-                // what led up to it, what it's reacting to -- which a pure semantic search
-                // keyed on the highlight itself isn't guaranteed to surface (nearby dialogue can
-                // drift topic fast even though it's exactly what matters here). The full current
-                // chapter covers that; the retrieved passages are purely supplementary, for
-                // catching an echo or a connection to something earlier in the book.
-                val localFilePath = book.localFilePath
-                val chapter = localFilePath?.let {
-                    epubTextExtractor.extractChapter(it, quickPrompt.chapterIndex)
-                }
-                if (chapter == null) {
-                    emit(AiraResponse.Error("No content found for this chapter."))
-                    return@flow
-                }
-                val supplementary = ragRetriever.retrieve(
-                    bookId = bookId,
-                    query = quickPrompt.text,
-                    topPassages = 10,
-                    spoilerLockEnabled = true
-                )
-                QuickChatPayload(
-                    actionType = QuickChatType.WHAT_SIGNIFICANCE,
-                    bookTitle = book.title,
-                    bookAuthor = book.author,
-                    context = "CURRENT CHAPTER:\n${chapter.text}\n\n" +
-                        "HIGHLIGHTED PASSAGE WITHIN IT:\n${quickPrompt.text}\n\n" +
-                        "ADDITIONAL CONTEXT FROM ELSEWHERE IN THE BOOK:\n" +
-                        QuickBuilder.buildContextBlock(supplementary)
-                )
-            }
-
-            // Isolated flow, like the old RecallCharacterSimple test path -- its own service
-            // call, its own storage, and its own emitted response type. It never produces a
-            // QuickChatPayload, so it ends with return@flow.
             is QuickPrompt.VisualizeThis -> {
                 try {
                     val result = visualizeService.visualize(
@@ -290,7 +214,8 @@ class QuickChatRepositoryImpl(
                     airaChatService.ask(
                         bookId = bookId,
                         query = quickPrompt.query,
-                        selectedText = quickPrompt.selectedText
+                        selectedText = quickPrompt.selectedText,
+                        request = request
                     )
                 )
                 return@flow
@@ -310,20 +235,12 @@ class QuickChatRepositoryImpl(
                 // get recorded under a premade stand-in statement -- this is what makes them show
                 // up in the full chat history/transcript alongside typed messages, instead of
                 // vanishing once the peek bar closes.
-                airaMessageDao.insertMessages(listOf(
-                    AiraMessageEntity(
-                        bookId = bookId,
-                        role = AiraMessageRole.USER,
-                        content = quickPrompt.toHistoryStatement(), chapterIndex = book.lastChapterIndex
-                    )
-                ,
-                    AiraMessageEntity(
-                        bookId = bookId,
-                        role = AiraMessageRole.AIRA,
-                        content = responseText.trim(), chapterIndex = book.lastChapterIndex
-                    )
-                ))
-                emit(AiraResponse.Success(responseText.trim()))
+                airaChatService.rememberQuick(bookId, quickPrompt.toHistoryStatement(), responseText.trim(), quickSelection,
+                    request, quickPrompt is QuickPrompt.SummarizeChapter, topic)
+                val anchorJson = topic?.anchorLocatorJson
+                val sources = if (quickSelection != null && anchorJson != null)
+                    listOf(SourceExcerpt("S1", "Selected passage", quickSelection, anchorJson)) else emptyList()
+                emit(AiraResponse.Success(responseText.trim(), sources = sources))
             }
 
             }
@@ -338,23 +255,15 @@ class QuickChatRepositoryImpl(
         }
     }
 
-    // Shows exactly which chapters/chunks are going into the LLM call for the
-    // character-retrieval quick actions, without dumping the full chunk text.
-    private fun logRetrievedChunks(label: String, name: String, chunks: List<RetrievedChunk>) {
-        Timber.d(
-            "$label chunks for \"$name\" (${chunks.size}):\n" +
-                chunks.joinToString("\n") { chunk ->
-                    "[Ch ${chunk.chapterIndex} chunk ${chunk.chunkIndex}] ${chunk.text.take(80)}"
-                }
-        )
-    }
-
     // A chip tap never produces a real typed question, so one is stood in for it here purely
     // for the chat history transcript -- CustomQuestion is the one exception, since it already
     // carries the user's own typed text.
     private fun QuickPrompt.toHistoryStatement(): String = when (this) {
+        is QuickPrompt.CatchMeUp -> "Catch me up here."
+        is QuickPrompt.ExplainConversation -> "Explain this conversation: $text"
+        is QuickPrompt.IncludeMoreContext -> "Include more preceding context."
         is QuickPrompt.WhoAreTheCharacters -> "Who are the characters in this book?"
-        is QuickPrompt.WhatAreTheThemes -> "What are the themes of this book?"
+        is QuickPrompt.WhatAreTheThemes -> "What are the themes of this chapter?"
         is QuickPrompt.RecallCharacter -> "Who is $name?"
         is QuickPrompt.RecentRole -> "What has $name been doing recently?"
         is QuickPrompt.JourneySoFar -> "What has $name's journey been so far?"

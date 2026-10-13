@@ -33,7 +33,7 @@ fun Book.toEntity(
         lastChapterTitle = this.lastChapterTitle,
         lastChapterIndex = this.lastChapterIndex,
         lastScrollPosition = this.lastScrollPosition,
-        lastLocatorJson = null,
+        lastLocatorJson = this.lastLocatorJson,
         fileSizeBytes = 0L,
         chapters = this.chapters
     )
@@ -61,7 +61,8 @@ fun BookEntity.toDomainModel(): Book {
         lastChapterTitle = this.lastChapterTitle,
         lastChapterIndex = this.lastChapterIndex,
         lastScrollPosition = this.lastScrollPosition,
-        chapters = this.chapters
+        chapters = this.chapters,
+        lastLocatorJson = this.lastLocatorJson
     )
 }
 

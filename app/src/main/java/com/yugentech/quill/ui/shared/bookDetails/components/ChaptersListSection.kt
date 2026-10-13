@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +37,7 @@ import com.yugentech.quill.ui.main.components.itemShape
 fun LazyListScope.chaptersListSection(
     chapters: List<Chapter>,
     onChapterClick: (String) -> Unit,
+    currentChapterHref: String? = null,
     modifier: Modifier = Modifier
 ) {
     if (chapters.isEmpty()) return
@@ -63,7 +66,8 @@ fun LazyListScope.chaptersListSection(
                 chapter = chapter,
                 index = index,
                 chapters = chapters,
-                onClick = onChapterClick
+                onClick = onChapterClick,
+                isCurrent = chapter.href == currentChapterHref
             )
         }
     }
@@ -74,13 +78,21 @@ private fun ChapterItem(
     chapter: Chapter,
     index: Int,
     chapters: List<Chapter>,
-    onClick: (String) -> Unit
+    onClick: (String) -> Unit,
+    isCurrent: Boolean
 ) {
     val depth = chapter.depth
     val topPadding = calculateTopPadding(depth, index, chapters)
-    val styling = getChapterStyling(depth)
+    val styling = getChapterStyling(depth).let {
+        if (isCurrent) it.copy(backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+            textColor = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold) else it
+    }
 
-    Column {
+    Column(Modifier.semantics { if (isCurrent) stateDescription = "Current chapter" }) {
+        if (isCurrent) {
+            Text("Current chapter", color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        }
         if (topPadding > 0.dp) {
             Spacer(modifier = Modifier.height(topPadding))
         }
