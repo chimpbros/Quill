@@ -29,6 +29,6 @@ val personalModule=module {
  } }
  single(createdAtStart=true) { BackupManager(androidContext(),get(),get(),mapOf(
   "theme" to get(named("theme")),"user" to get(named("user")),"reader" to get(named("reader"))
- ),get()) }
+ ),get(),get()) }
  viewModel { PersonalSettingsViewModel(get(),get(),get(),get(),get()) }
 }

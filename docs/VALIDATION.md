@@ -1,5 +1,24 @@
 # Validation record
 
+## Scene stability update: 4.4.1
+
+Validated 13 October 2026. Release version is 4.4.1-personal (21); Readium remains 3.1.2 and Room remains schema 7.
+
+- File reads use IO; evidence construction and text indexing use Default. Reader and AI share a file-revision-keyed structure with pinned leases, one unused entry, memory-pressure eviction, and deletion/restore invalidation.
+- Scene lookup walks backward over paragraph indexes, limits earlier references before constructing excerpts, and has a five-second optional-reference deadline. Requested passage/context and the frozen endpoint are preserved. A deterministic incomplete-context notice is included in the saved answer.
+- Exact quote lookup reuses normalized text without repeatedly copying book prefixes. Canonical text avoids a redundant per-character offset array. Generated DOM paths resolve through indexed children, avoiding Jsoup's repeated sibling walks for nth-of-type selectors. Unicode, punctuation, ambiguous quotes/IDs, and invalid endpoints remain covered.
+- Preparing events are transient. Reader/full-chat loading and Stop controls handle them; request identities and transactional topic checks prevent stale completion. Cancelled fresh scenes restore the completed discussion.
+- Final debug and test builds and **54 unit tests** passed in `artifacts/stability-build-9.log`. Lint reported **0 errors, 404 warnings, 1 hint**.
+- **51 unique emulator checks passed across focused runs**: the final 51-test run passed 50 checks (`artifacts/stability-acceptance-final.log`), and its remaining oversized-chapter UI check passed after the harness waited for the native navigator/fonts and explicitly advanced its clock (`artifacts/stability-current-chapter-ready.log`). This includes existing discussions, migration/backup recovery, source boundaries, ranges, navigation, resize, and the new large-book flows.
+- The synthetic EPUB contains over 3 MB of text, 24,000 paragraphs, repeated wording, Unicode/inline formatting, scene breaks, cross-resource dialogue, and unread markers. The reader UI test displays its oversized resource near the end, mostly without paragraph IDs, and exercises page controls, resize, Stop, retry, expansion, and recreation with an isolated mocked connection.
+- The final unprofiled cold/warm request check measured **125 ms maximum main-thread heartbeat gap**, below the 250 ms target, and **one structure load for scene/follow-up/expansion** (`artifacts/stability-final-timings.txt`). The UI check enforces Stop within 500 ms. Cold request duration was 8.101 s on this emulator, including parsing, bounded optional lookup, and mocked generation; this is not a phone or live-network latency claim.
+- Focused Perfetto captures and memory snapshots are preserved in ignored artifacts. An earlier profiled run observed a 302 ms heartbeat gap and prompted reducing index allocation. Earlier failed runs also exposed an edit-script UTF-8 conversion mistake, corrected before final validation. Neither failed run is counted as passing evidence.
+- Android 37's unrelated telephony crash dialogs/System UI ANR interfered with two earlier focus/injection checks. Temporarily suppressing emulator system error dialogs allowed those checks to pass; crash buffers remain available. Emulator settings are restored after QA.
+- The owner's EPUB/device was unavailable, so the reported real-book chapter and actual phone crash/ANR are unverified. No live model quality evaluation was performed; routing, evidence, boundaries, and synthetic known-context behavior used mocks. The owner's phone was not modified.
+- The optimized signed release build passed (`artifacts/features-4.4.1-release.log`). APK Signature Scheme v2 verification confirmed the existing certificate SHA-256 `80054e1fbd0114e8aa308fc6e7b68620f94d938fdf86a96a2b85e4e465e621ac`. Installing the release over the emulator's existing app preserved its library; library launch, book rendering, Unicode, and saved highlight rendering passed the release smoke check (`artifacts/stability-release-ui.xml`, `artifacts/stability-release-reader.png`). Temporary QA settings were restored and the emulator was stopped.
+
+Local APK: `artifacts/quill-personal-4.4.1.apk`, **149,169,310 bytes**, version **4.4.1-personal (21)**. SHA-256: `71828e763173c6ec6d71fcec675ce33bc0fb4c7394bb01f5069abb912e6fd438`.
+
 Validation date: 10 October 2026. Baseline: `585b8e868f1febb854bfb0beb1dd2780f98a08a5`.
 
 ## Build baseline

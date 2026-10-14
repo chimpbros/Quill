@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.map
 import java.io.File
 
 class LibraryRepositoryImpl(
-    private val bookDao: BookDao
+    private val bookDao: BookDao,
+    private val structures: com.yugentech.quill.aira.rag.BookStructureStore? = null
 ) : LibraryRepository {
 
     override fun getLastReadBook(): Flow<LibraryBookView?> {
@@ -42,6 +43,7 @@ class LibraryRepositoryImpl(
     }
 
     override suspend fun deleteBook(bookId: String) {
+        structures?.invalidate(bookId)
         val book = bookDao.getBookEntity(bookId)
         book?.localFilePath?.let { path ->
             val file = File(path)

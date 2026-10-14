@@ -66,7 +66,8 @@ val readerModule = module {
             preferencesRepository = get(),
             backgroundSoundRepository = get(),
             hapticService = get(),
-            bookmarkDao = get()
+            bookmarkDao = get(),
+            structures = get()
         )
     }
 

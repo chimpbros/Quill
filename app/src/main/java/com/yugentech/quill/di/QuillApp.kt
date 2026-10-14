@@ -65,6 +65,15 @@ class QuillApp : Application(), Configuration.Provider, ImageLoaderFactory {
         }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.yugentech.quill.aira.rag.BookStructureStore>()?.trimMemory()
+    }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        org.koin.core.context.GlobalContext.getOrNull()?.getOrNull<com.yugentech.quill.aira.rag.BookStructureStore>()?.trimMemory()
+    }
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(KoinWorkerFactory())

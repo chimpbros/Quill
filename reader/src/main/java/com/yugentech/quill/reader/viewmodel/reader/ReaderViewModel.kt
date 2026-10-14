@@ -54,7 +54,8 @@ class ReaderViewModel(
     private val preferencesRepository: ReaderSettingsRepository,
     private val backgroundSoundRepository: BackgroundSoundRepository,
     private val hapticService: HapticService,
-    private val bookmarkDao: com.yugentech.quill.database.dao.BookmarkDao
+    private val bookmarkDao: com.yugentech.quill.database.dao.BookmarkDao,
+    private val structures: com.yugentech.quill.aira.rag.BookStructureStore
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Idle)
@@ -65,6 +66,19 @@ class ReaderViewModel(
     private val _bookmarks = MutableStateFlow<List<com.yugentech.quill.database.entity.BookmarkEntity>>(emptyList())
     val bookmarks = _bookmarks.asStateFlow()
     private var bookmarksJob: Job? = null
+    private var structureLease: com.yugentech.quill.aira.rag.BookStructureStore.Lease? = null
+    private var loadJob: Job? = null
+    init {
+        viewModelScope.launch {
+            structures.invalidations.collect { bookId ->
+                if ((_uiState.value as? ReaderUiState.Success)?.bookId == bookId) {
+                    loadJob?.cancel(); cancelRange(); structureLease?.close(); structureLease = null
+                    structure = null; publication?.close(); publication = null
+                    _uiState.value = ReaderUiState.Error("The book text changed. Reopen the book to reload it.")
+                }
+            }
+        }
+    }
     private var structure: com.yugentech.quill.aira.rag.PublicationStructure? = null
     private val _rangeState = MutableStateFlow(com.yugentech.quill.reader.ui.components.range.ReaderRangeState())
     val rangeState = _rangeState.asStateFlow()
@@ -142,7 +156,12 @@ class ReaderViewModel(
             _uiState.value = loaded.copy(initialLocator = locator ?: loaded.initialLocator)
             return
         }
-        viewModelScope.launch {
+        loadJob?.cancel()
+        structureLease?.close(); structureLease = null; structure = null
+        publication?.close(); publication = null
+        loadJob = viewModelScope.launch {
+            var opened: Publication? = null
+            var acquired: com.yugentech.quill.aira.rag.BookStructureStore.Lease? = null
             _uiState.value = ReaderUiState.Idle
             cancelRange()
 
@@ -171,11 +190,11 @@ class ReaderViewModel(
                     val pub = publicationOpener.open(asset, allowUserInteraction = false)
                         .getOrElse { error -> throw Exception("Failed to open publication: $error") }
 
-                    publication = pub
+                    opened = pub
                     val positions = pub.positions()
-                    val navigation = com.yugentech.quill.aira.rag.PublicationStructure.load(pub)
-                    structure = navigation
-                    tocMap = flattenToc(pub.tableOfContents)
+                    val lease = structures.acquire(bookId, path) { com.yugentech.quill.aira.rag.PublicationStructure.load(pub) }
+                    acquired = lease
+                    val navigation = lease.structure
 
                     val targetLocator = locatorJson?.let { jsonStr ->
                         try {
@@ -199,6 +218,11 @@ class ReaderViewModel(
 
                     val finalLocator = targetLocator ?: explicitLocator ?: savedLocator
 
+                    withContext(Dispatchers.Main.immediate) {
+                    publication = pub
+                    structureLease = lease
+                    structure = navigation
+                    tocMap = flattenToc(pub.tableOfContents)
                     sessionStartTime = System.currentTimeMillis()
 
                     _uiState.value = ReaderUiState.Success(
@@ -222,9 +246,11 @@ class ReaderViewModel(
                         }
                     }
 
+                    }
                 } catch (e: Exception) {
+                    acquired?.close(); opened?.close()
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    _uiState.value = ReaderUiState.Error(e.message ?: "Failed to open book")
+                    withContext(Dispatchers.Main.immediate) { _uiState.value = ReaderUiState.Error(e.message ?: "Failed to open book") }
                 }
             }
         }
@@ -441,6 +467,7 @@ class ReaderViewModel(
         saveReadingSession()
         backgroundSoundRepository.stop()
         super.onCleared()
+        structureLease?.close(); structureLease = null; structure = null
         publication?.close()
     }
 

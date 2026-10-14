@@ -22,6 +22,7 @@ interface AiraDiscussionDao {
     @Transaction
     suspend fun completeTurn(bookId: String, topicId: String, text: String, sources: String, time: Long,
         messages: List<AiraMessageEntity>) {
+        if (get(bookId)?.topicId != topicId) return
         insertTurnMessages(messages)
         complete(bookId, topicId, text, sources, time)
     }

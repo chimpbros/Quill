@@ -6,6 +6,8 @@ The app installs as **Quill Personal** (`com.yugentech.quill.personal`) alongsid
 
 ## Reading and AI
 
+Version 4.4.1 improves scene-explanation stability. Context retrieval runs in the background, shares the reader's parsed book, and uses bounded searches and indexed locations. Aira shows preparation progress and supports Stop throughout retrieval. If earlier-reference lookup takes more than five seconds, the explanation keeps the requested scene and identifies incomplete earlier context.
+
 Readium EPUB reading, local imports, Gutenberg and Standard Ebooks discovery, highlights, categories, reading positions, themes, soundscapes, reminders, and insights are retained. Books, conversations, illustrations, and indexes stay in local app storage.
 
 Configure connections in **More → AI Connections & Backups**. Text and images have independent provider/model selections.

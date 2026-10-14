@@ -25,6 +25,7 @@ class BackupAndMigrationTest {
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
  private lateinit var db:AppDatabase
  private lateinit var backups:BackupManager
+ private val structures=com.yugentech.quill.aira.rag.BookStructureStore()
  private val files=mutableListOf<File>()
  @Before fun setup() {
   db=Room.inMemoryDatabaseBuilder(context,AppDatabase::class.java).build()
@@ -32,9 +33,9 @@ class BackupAndMigrationTest {
    val file=File(context.cacheDir,"$name-${UUID.randomUUID()}.preferences_pb");files.add(file)
    PreferenceDataStoreFactory.create(scope=scope,produceFile={file})
   }
-  backups=BackupManager(context,db,ConnectionStore(context),stores)
+  backups=BackupManager(context,db,ConnectionStore(context),stores,structures=structures)
  }
- @After fun cleanup() { db.close();scope.cancel();files.forEach { it.delete() } }
+ @After fun cleanup() { structures.invalidateAll();db.close();scope.cancel();files.forEach { it.delete() } }
  private suspend fun fixture():BookEntity {
   val epub=File(context.filesDir,"fixture-${UUID.randomUUID()}.epub");files.add(epub)
   instrument.context.assets.open("sample.epub").use { input -> epub.outputStream().use { input.copyTo(it) } }

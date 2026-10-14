@@ -10,6 +10,13 @@ import com.yugentech.quill.database.dao.*
 import com.yugentech.quill.database.entity.*
 import com.yugentech.quill.domain.LocalProfile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.*
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -22,13 +29,17 @@ class AiraChatService(private val intentDetectionRepository: IntentDetectionRepo
     private data class Pending(val bookId: String, val query: String, val selection: String?,
         val request: ReaderRequestContext, val route: Intent.BookRelated, val choices: List<ScopeChoice>)
     private val pending = ConcurrentHashMap<String, Pending>()
+    private val activeRequests = ConcurrentHashMap<String, Job>()
+    private val requestLock = Mutex()
 
     fun observeDiscussion(bookId: String): Flow<DiscussionContext?> = discussionDao?.observe(bookId)
         ?.map { it?.let(DiscussionContext::from) } ?: flowOf(null)
 
-    suspend fun newTopic(bookId: String) {
+    suspend fun newTopic(bookId: String): Unit = requestLock.withLock {
+        activeRequests.remove(bookId)?.cancel(CancellationException("New discussion"))
         pending.entries.removeAll { it.value.bookId == bookId }
         discussionDao?.clear(bookId)
+        Unit
     }
 
     suspend fun prepareDiscussion(bookId: String, selection: String?, request: ReaderRequestContext): AiraDiscussionEntity? {
@@ -62,6 +73,7 @@ class AiraChatService(private val intentDetectionRepository: IntentDetectionRepo
     }
 
     private suspend fun saveTurn(book: BookEntity, query: String, response: AiraResponse.Success, discussion: AiraDiscussionEntity?) {
+        currentCoroutineContext().ensureActive()
         val sources = SourceExcerpt.encode(response.sources)
         val messages = listOf(
             AiraMessageEntity(bookId = book.id, role = AiraMessageRole.USER, content = query.trim(),
@@ -110,8 +122,16 @@ class AiraChatService(private val intentDetectionRepository: IntentDetectionRepo
 
     private fun process(bookId: String, query: String, selection: String?, request: ReaderRequestContext,
         approvedRoute: Intent.BookRelated? = null): Flow<AiraResponse> = flow {
+        val owner = currentCoroutineContext()[Job]!!
+        var previousDiscussion: AiraDiscussionEntity? = null
+        var createdDiscussion: AiraDiscussionEntity? = null
+        var completed = false
+        requestLock.withLock { activeRequests.put(bookId, owner)?.takeIf { it !== owner }?.cancel(CancellationException("Superseded request")) }
+        try {
         val book = bookDao.getBookEntity(bookId) ?: run { emit(AiraResponse.Error("Book not found.")); return@flow }
+        previousDiscussion = discussionDao?.get(bookId)
         var discussion = prepareDiscussion(bookId, selection, request)
+        createdDiscussion = discussion?.takeIf { it.topicId != previousDiscussion?.topicId }
         var actualSelection = selection ?: discussion?.selectionText
         var actualRequest = discussion?.let { DiscussionContext.from(it).request }
             ?: request.copy(currentLocator = request.currentLocator ?: parseLocator(book.lastLocatorJson))
@@ -145,6 +165,8 @@ class AiraChatService(private val intentDetectionRepository: IntentDetectionRepo
             is Intent.General -> generalChatRepository.handle(query, history, book, actualSelection, localProfile.currentUserName)
         }
         source.collect { response ->
+            currentCoroutineContext().ensureActive()
+            if (activeRequests[bookId] !== owner) throw CancellationException("Superseded request")
             when (response) {
                 is AiraResponse.Clarification -> {
                     val route = intent as? Intent.BookRelated ?: return@collect
@@ -153,8 +175,30 @@ class AiraChatService(private val intentDetectionRepository: IntentDetectionRepo
                     pending[id] = Pending(bookId, query, actualSelection, actualRequest, route, response.choices)
                     emit(response.copy(requestId = id))
                 }
-                is AiraResponse.Success -> { saveTurn(book, query, response, discussion); emit(response) }
+                is AiraResponse.Success -> {
+                    requestLock.withLock {
+                        currentCoroutineContext().ensureActive()
+                        if (activeRequests[bookId] !== owner) throw CancellationException("Superseded request")
+                        saveTurn(book, query, response, discussion)
+                    }
+                    completed = true
+                    emit(response)
+                }
                 else -> emit(response)
+            }
+        }
+        } finally {
+            withContext(NonCancellable) {
+                requestLock.withLock {
+                    if (activeRequests[bookId] === owner) {
+                        // A cancelled fresh scene restores the last completed discussion.
+                        if (!owner.isActive && !completed && createdDiscussion != null &&
+                            discussionDao?.get(bookId)?.topicId == createdDiscussion?.topicId) {
+                            previousDiscussion?.let { discussionDao?.save(it) } ?: discussionDao?.clear(bookId)
+                        }
+                        activeRequests.remove(bookId, owner)
+                    }
+                }
             }
         }
     }.catch { error ->

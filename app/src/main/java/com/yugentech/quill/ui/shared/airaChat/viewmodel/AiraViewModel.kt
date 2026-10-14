@@ -34,6 +34,8 @@ class AiraViewModel(
     private val _uiState = MutableStateFlow(AiraUiState())
     val uiState = _uiState.asStateFlow()
 
+    private var settlingJob: Job? = null
+    private var requestGeneration = 0L
     private var isCurrentlyStreaming = false
     private var generationJob: Job? = null
 
@@ -157,7 +159,9 @@ class AiraViewModel(
             )
         }
 
+        val requestId = ++requestGeneration
         generationJob = viewModelScope.launch {
+            settlingJob?.join(); settlingJob = null
             var hasConsumedQuota = false
 
             try {
@@ -165,11 +169,13 @@ class AiraViewModel(
 
 
 
-                    handleStreamResponse(response)
+                    if (requestId == requestGeneration) handleStreamResponse(response)
                 }
             } finally {
-                isCurrentlyStreaming = false
-                _uiState.update { it.copy(isLoading = false, isStreaming = false) }
+                if (requestId == requestGeneration) {
+                    isCurrentlyStreaming = false
+                    _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) }
+                }
             }
         }
     }
@@ -184,23 +190,18 @@ class AiraViewModel(
         isCurrentlyStreaming = true
         _uiState.update { it.copy(isLoading = true, error = null,
             messages = it.messages + AiraMessage(AiraMessage.Role.USER, "Include more preceding context.") + AiraMessage(AiraMessage.Role.AIRA, "")) }
+        val requestId = ++requestGeneration
         generationJob = viewModelScope.launch {
-            try { airaChatRepository.expandContext(bookId).collect { handleStreamResponse(it) } }
-            finally { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
+            settlingJob?.join(); settlingJob = null
+            try { airaChatRepository.expandContext(bookId).collect { if (requestId == requestGeneration) handleStreamResponse(it) } }
+            finally { if (requestId == requestGeneration) { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) } } }
         }
     }
 
     fun stopGeneration() {
+        val wasPending = _uiState.value.isLoading || _uiState.value.isStreaming
         resetStreamingStates()
-        _uiState.update { state ->
-            val updatedMessages = state.messages.toMutableList()
-            if (updatedMessages.isNotEmpty() && updatedMessages.last().role == AiraMessage.Role.AIRA) {
-                updatedMessages[updatedMessages.lastIndex] = updatedMessages.last().copy(
-                    content = "Stopped on your request. Let me know if you've got more questions!"
-                )
-            }
-            state.copy(messages = updatedMessages)
-        }
+        if (wasPending) _uiState.update { state -> state.copy(messages = state.messages.dropLast(2)) }
     }
 
     fun toggleSpoilerLock() {
@@ -232,6 +233,7 @@ class AiraViewModel(
 
     private fun handleStreamResponse(response: AiraResponse) {
         when (response) {
+            is AiraResponse.Preparing -> _uiState.update { it.copy(preparationMessage = response.message, isLoading = true, isStreaming = false) }
             is AiraResponse.Clarification -> _uiState.update { it.copy(clarification = response, isLoading = false,
                 isStreaming = false, messages = it.messages.dropLast(1) + AiraMessage(AiraMessage.Role.AIRA, response.question)) }
             is AiraResponse.Partial, is AiraResponse.Success -> {
@@ -248,6 +250,7 @@ class AiraViewModel(
 
                     airaUiState.copy(
                         messages = updatedMessages,
+                        preparationMessage = null,
                         isLoading = response is AiraResponse.Partial,
                         isStreaming = response is AiraResponse.Partial
                     )
@@ -270,11 +273,14 @@ class AiraViewModel(
     }
 
     private fun resetStreamingStates() {
+        requestGeneration++
+        settlingJob = generationJob ?: settlingJob
         generationJob?.cancel()
         generationJob = null
         isCurrentlyStreaming = false
         _uiState.update { airaUiState ->
             airaUiState.copy(
+                preparationMessage = null,
                 isLoading = false,
                 isStreaming = false
             )
@@ -286,9 +292,11 @@ class AiraViewModel(
         isCurrentlyStreaming = true
         _uiState.update { it.copy(clarification = null, isLoading = true, error = null,
             messages = it.messages.dropLast(1) + AiraMessage(AiraMessage.Role.AIRA, "")) }
+        val requestId = ++requestGeneration
         generationJob = viewModelScope.launch {
-            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect(::handleStreamResponse) }
-            finally { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
+            settlingJob?.join(); settlingJob = null
+            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect { if (requestId == requestGeneration) handleStreamResponse(it) } }
+            finally { if (requestId == requestGeneration) { isCurrentlyStreaming = false; _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) } } }
         }
     }
     fun dismissClarification() { _uiState.update { it.copy(clarification = null) } }

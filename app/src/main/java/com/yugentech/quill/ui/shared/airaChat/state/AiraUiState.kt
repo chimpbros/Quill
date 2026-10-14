@@ -14,6 +14,7 @@ data class AiraUiState(
     val indexingProgress: Int = 0,
     val hasStartedReading: Boolean = false,
     val messages: List<AiraMessage> = emptyList(),
+    val preparationMessage: String? = null,
     val isLoading: Boolean = false,
     val isStreaming: Boolean = false,
     val spoilerLockEnabled: Boolean = true,

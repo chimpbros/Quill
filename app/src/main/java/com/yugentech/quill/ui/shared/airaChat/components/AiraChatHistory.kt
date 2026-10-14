@@ -88,6 +88,7 @@ fun AiraChatHistory(
         AiraChatHeader(
             isStreaming = uiState.isStreaming,
             isLoading = uiState.isLoading,
+            preparationMessage = uiState.preparationMessage,
             isVisuallyTyping = isVisuallyTyping,
             lastChapterTitle = uiState.lastChapterTitle,
             spoilerLockEnabled = uiState.spoilerLockEnabled,

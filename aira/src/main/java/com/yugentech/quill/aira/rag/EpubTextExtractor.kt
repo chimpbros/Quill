@@ -27,8 +27,9 @@ class EpubTextExtractor(
     private val context: Context
 ) {
     suspend fun <T> withPublication(filePath: String, block: suspend (Publication) -> T): T {
-        val publication = openPublication(filePath) ?: error("Book text is unavailable. Download or reimport this book.")
-        return try { block(publication) } finally { publication.close() }
+        val publication = withContext(Dispatchers.IO) { openPublication(filePath) }
+            ?: error("Book text is unavailable. Download or reimport this book.")
+        return try { block(publication) } finally { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { publication.close() } }
     }
     suspend fun structure(filePath: String): PublicationStructure = withPublication(filePath) { PublicationStructure.load(it) }
 

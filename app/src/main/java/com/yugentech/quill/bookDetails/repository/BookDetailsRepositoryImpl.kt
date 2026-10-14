@@ -25,7 +25,8 @@ class BookDetailsRepositoryImpl(
     private val categoryDao: CategoryDao,
     private val chunkDao: BookChunkDao,
     private val indexingStateDao: BookIndexingStateDao,
-    private val workManager: WorkManager
+    private val workManager: WorkManager,
+    private val structures: com.yugentech.quill.aira.rag.BookStructureStore? = null
 ) : BookDetailsRepository {
 
     override fun getBook(bookId: String): Flow<BookEntity?> =
@@ -106,6 +107,7 @@ class BookDetailsRepositoryImpl(
     }
 
     override suspend fun deleteBook(bookId: String) {
+        structures?.invalidate(bookId)
         val book = bookDao.getBookEntity(bookId)
         book?.localFilePath?.let { File(it).takeIf { f -> f.exists() }?.delete() }
         workManager.cancelAllWorkByTag("index_$bookId")

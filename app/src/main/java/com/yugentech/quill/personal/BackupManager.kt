@@ -30,7 +30,7 @@ object BackupPaths {
 }
 
 class BackupManager(private val context:Context,private val db:AppDatabase,private val connections:ConnectionStore,
- private val stores:Map<String,DataStore<Preferences>>,private val retriever:com.yugentech.quill.aira.rag.RagRetriever?=null) {
+ private val stores:Map<String,DataStore<Preferences>>,private val retriever:com.yugentech.quill.aira.rag.RagRetriever?=null, private val structures:com.yugentech.quill.aira.rag.BookStructureStore?=null) {
  private val mutex=Mutex()
  private val tables=listOf("books","user_categories","users","highlights","aira_messages","reading_sessions","visuals","bookmarks","aira_discussions")
  private val journal=File(context.filesDir,"restore-journal.json")
@@ -225,6 +225,7 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
  }
  suspend fun recover()=withContext(Dispatchers.IO) {
   if(!journal.exists())return@withContext
+  structures?.invalidateAll()
   val old=JSONObject(journal.readText())
   val recovered=old.getJSONObject("tables")
   val highlights=recovered.getJSONArray("highlights")
@@ -290,6 +291,7 @@ class BackupManager(private val context:Context,private val db:AppDatabase,priva
    val old=JSONObject().put("databaseVersion",db.openHelper.readableDatabase.version).put("tables",dump()).put("settings",settings())
    android.util.AtomicFile(journal).let { atomic -> val out=atomic.startWrite();try { out.write(old.toString().toByteArray());atomic.finishWrite(out) } catch(e:Exception) { atomic.failWrite(out);throw e } }
    try {
+    structures?.invalidateAll()
     replaceData(data);applySettings(manifest.getJSONObject("settings"));retriever?.invalidate();check(journal.delete());keep=true
     cleanupReplacedMedia(old.getJSONObject("tables"),data)
    } catch(e:Exception) { withContext(NonCancellable) { recover() };throw e }

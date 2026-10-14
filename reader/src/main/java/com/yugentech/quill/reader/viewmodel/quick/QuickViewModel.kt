@@ -27,6 +27,10 @@ class QuickViewModel(
     private val _uiState = MutableStateFlow(QuickUiState())
     val uiState = _uiState.asStateFlow()
 
+    private var settlingJob: Job? = null
+    private var requestGeneration = 0L
+    private var completedResponse: String? = null
+    private var completedSources = emptyList<com.yugentech.quill.aira.context.SourceExcerpt>()
     private var activeJob: Job? = null
     private var discussionJob: Job? = null
     private var selectionJob: Job? = null
@@ -35,6 +39,7 @@ class QuickViewModel(
         discussionJob?.cancel()
         discussionJob = viewModelScope.launch {
             airaChatRepository.observeDiscussion(bookId).collect { discussion ->
+                if (discussion?.lastResponse != null) { completedResponse = discussion.lastResponse; completedSources = discussion.sources }
                 _uiState.update { state -> state.copy(discussion = discussion,
                     response = if (!state.isLoading) discussion?.lastResponse else state.response,
                     sources = discussion?.sources.orEmpty()) }
@@ -77,19 +82,20 @@ class QuickViewModel(
         if (query.isBlank() || _uiState.value.isLoading) return
         if (!checkQuota()) return
 
-        prepareForNewQuery()
+        val requestId = prepareForNewQuery()
 
         activeJob = viewModelScope.launch {
+            settlingJob?.join(); settlingJob = null
             var hasConsumedQuota = false
             try {
                 selectionJob?.join()
                 airaChatRepository.ask(bookId, query, selectedText, request).collect { response ->
-                    handleResponseStream(response) {
+                    if (requestId == requestGeneration) handleResponseStream(response) {
 
                     }
                 }
             } finally {
-                _uiState.update { it.copy(isLoading = false, isStreaming = false) }
+                if (requestId == requestGeneration) _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) }
             }
         }
     }
@@ -101,14 +107,15 @@ class QuickViewModel(
         if (_uiState.value.isLoading) return
         if (!checkQuota()) return
 
-        prepareForNewQuery(isGeneratingImage = intent is QuickPrompt.VisualizeThis)
+        val requestId = prepareForNewQuery(isGeneratingImage = intent is QuickPrompt.VisualizeThis)
 
         activeJob = viewModelScope.launch {
+            settlingJob?.join(); settlingJob = null
             var hasConsumedQuota = false
             try {
                 selectionJob?.join()
                 quickRepository.ask(bookId, intent, request).collect { response ->
-                    handleResponseStream(response) {
+                    if (requestId == requestGeneration) handleResponseStream(response) {
                         if (!hasConsumedQuota) {
                             hasConsumedQuota = true
                             Unit
@@ -116,23 +123,26 @@ class QuickViewModel(
                     }
                 }
             } finally {
-                _uiState.update { it.copy(isLoading = false, isStreaming = false) }
+                if (requestId == requestGeneration) _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) }
             }
         }
     }
 
     private fun handleResponseStream(response: AiraResponse, onFirstSuccess: () -> Unit) {
         when (response) {
+            is AiraResponse.Preparing -> _uiState.update { it.copy(preparationMessage = response.message, isLoading = true, isStreaming = false) }
             is AiraResponse.Clarification -> _uiState.update { it.copy(clarification = response, response = response.question,
                 isLoading = false, isStreaming = false) }
             is AiraResponse.Partial, is AiraResponse.Success -> {
                 val responseText = if(response is AiraResponse.Partial) response.text else (response as AiraResponse.Success).text
+                if (response is AiraResponse.Success) { completedResponse = response.text; completedSources = response.sources }
                 onFirstSuccess()
                 _uiState.update {
                     it.copy(
                         isLoading = response is AiraResponse.Partial,
                         isStreaming = response is AiraResponse.Partial,
                         response = responseText,
+                        preparationMessage = null,
                         imagePath = null,
                         error = null,
                         sources = if (response is AiraResponse.Success) response.sources else it.sources
@@ -146,7 +156,8 @@ class QuickViewModel(
                     it.copy(
                         isLoading = false,
                         isStreaming = false,
-                        response = null,
+                        preparationMessage = null,
+                response = null,
                         imagePath = response.imagePath,
                         error = null
                     )
@@ -165,11 +176,13 @@ class QuickViewModel(
         }
     }
 
-    private fun prepareForNewQuery(isGeneratingImage: Boolean = false) {
+    private fun prepareForNewQuery(isGeneratingImage: Boolean = false): Long {
+        val id = ++requestGeneration
         activeJob?.cancel()
         _uiState.update {
             it.copy(
                 isLoading = true,
+                preparationMessage = "Preparing scene…",
                 isStreaming = false,
                 response = EMPTY,
                 imagePath = null,
@@ -179,16 +192,19 @@ class QuickViewModel(
                 clarification = null
             )
         }
+        return id
     }
+
 
     private fun checkQuota(): Boolean = true
 
     fun chooseScope(choiceId: String) {
         val pending = _uiState.value.clarification ?: return
-        prepareForNewQuery()
+        val requestId = prepareForNewQuery()
         activeJob = viewModelScope.launch {
-            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect { handleResponseStream(it) {} } }
-            finally { _uiState.update { it.copy(isLoading = false, isStreaming = false) } }
+            settlingJob?.join(); settlingJob = null
+            try { airaChatRepository.continueRequest(pending.requestId, choiceId).collect { if (requestId == requestGeneration) handleResponseStream(it) {} } }
+            finally { if (requestId == requestGeneration) _uiState.update { it.copy(isLoading = false, isStreaming = false, preparationMessage = null) } }
         }
     }
     fun dismissClarification() { _uiState.update { it.copy(clarification = null) } }
@@ -196,6 +212,8 @@ class QuickViewModel(
 
 
     fun stopGeneration() {
+        requestGeneration++
+        settlingJob = activeJob ?: settlingJob
         activeJob?.cancel()
         activeJob = null
         _uiState.update { state ->
@@ -206,18 +224,23 @@ class QuickViewModel(
             state.copy(
                 isLoading = false,
                 isStreaming = false,
-                response = stoppedMsg
+                preparationMessage = null,
+                sources = if (completedResponse != null) completedSources else state.sources,
+                response = completedResponse ?: stoppedMsg
             )
         }
     }
 
     fun clearResponse() {
+        requestGeneration++
+        completedResponse = null; completedSources = emptyList()
         activeJob?.cancel()
         activeJob = null
         _uiState.update {
             it.copy(
                 isLoading = false,
                 isStreaming = false,
+                preparationMessage = null,
                 response = null,
                 clarification = null,
                 imagePath = null,

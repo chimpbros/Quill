@@ -23,6 +23,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
 val airaModule = module {
+    single { com.yugentech.quill.aira.rag.BookStructureStore() }
 
     single {
         EmbeddingEngine(
@@ -65,7 +66,8 @@ val airaModule = module {
     single<BookChatRepository> {
         BookChatRepositoryImpl(
             chatService = get(),
-            epubTextExtractor = get()
+            epubTextExtractor = get(),
+            structures = get()
         )
     }
 

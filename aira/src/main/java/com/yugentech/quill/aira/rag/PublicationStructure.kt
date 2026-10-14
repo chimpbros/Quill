@@ -2,6 +2,8 @@ package com.yugentech.quill.aira.rag
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
@@ -33,56 +35,173 @@ data class TextPoint(val spine: Int, val offset: Int) : Comparable<TextPoint> {
 data class PublicationSection(val id: String, val title: String, val href: String, val depth: Int,
     val parentId: String?, val start: TextPoint, val end: TextPoint)
 
-class HtmlTextDocument(html: String) {
+data class ParagraphSpan(val start: Int, val end: Int, val sceneBreakBefore: Boolean)
+
+class HtmlTextDocument(html: String, private var checkWork: () -> Unit = {}) {
     // Android's regex engine gives \s Unicode semantics; raw DOM offsets need one rule on every runtime.
     private val offsetWhitespace = Regex("[ \\t\\n\\u000B\\u000C\\r]+")
     private val document = Jsoup.parse(html)
     private val offsets = IdentityHashMap<Node, Int>()
     private val textNodes = mutableListOf<TextNode>()
-    val sceneBreakOffsets = mutableListOf<Int>()
+    private val breaks = mutableListOf<Int>()
+    val sceneBreakOffsets: List<Int> get() = breaks
+    private val nodeLengths = IdentityHashMap<TextNode, Int>()
+    private val idElements = mutableMapOf<String, Element?>()
+    private val siblingIndexes = IdentityHashMap<Element, Int>()
+    private val selectorCache = IdentityHashMap<Element, String>()
+    private val elementEnds = IdentityHashMap<Element, Int>()
+    private val childrenByTag = IdentityHashMap<Node, MutableMap<String, MutableList<Element>>>()
+    private val cssPart = Regex("([A-Za-z][A-Za-z0-9-]*)(?::nth-of-type\\((\\d+)\\))?")
+    private val cssId = Regex("#[A-Za-z][A-Za-z0-9_-]*")
+    private lateinit var nodeStarts: IntArray
+    val paragraphs: List<ParagraphSpan>
+    private val quoteIndex: TextIndex
+    private val literalParagraphs = java.util.concurrent.ConcurrentHashMap<Int, String>()
+    fun literalParagraph(start: Int, end: Int, check: () -> Unit): String? {
+        val index = paragraphs.binarySearchBy(start) { it.start }
+        if (index < 0 || paragraphs[index].end != end) return null
+        return literalParagraphs.computeIfAbsent(start) { TextIndex.literalIndex(text.substring(start, end), check) }
+    }
     val text: String
     init {
         document.select("script, style, head").remove()
         val builder = StringBuilder()
         NodeTraversor.traverse(object : NodeVisitor {
             override fun head(node: Node, depth: Int) {
+                checkWork()
+                if (node is Element) {
+                    val id = node.id()
+                    if (id.isNotBlank()) idElements[id] = if (idElements.containsKey(id)) null else node
+                    node.parent()?.let { parent ->
+                        val siblings = childrenByTag.getOrPut(parent) { mutableMapOf() }.getOrPut(node.normalName()) { mutableListOf() }
+                        siblings.add(node); siblingIndexes[node] = siblings.size
+                    }
+                }
                 if (node is Element && node.isBlock && builder.isNotEmpty() && builder.last() != '\n') builder.append('\n')
                 offsets[node] = builder.length
-                if (node is Element && node.normalName() == "hr") sceneBreakOffsets.add(builder.length)
+                if (node is Element && node.normalName() == "hr") breaks.add(builder.length)
                 if (node is TextNode) {
                     textNodes.add(node)
-                    val value = node.wholeText.replace(offsetWhitespace, " ")
+                    val value = normalizeDomText(node.wholeText)
+                    nodeLengths[node] = if (value.isBlank()) 0 else value.length
                     if (value.isNotBlank()) builder.append(value)
                 }
             }
             override fun tail(node: Node, depth: Int) {
+                if (node is Element) elementEnds[node] = builder.length
                 if (node is Element && node.isBlock && builder.isNotEmpty() && builder.last() != '\n') builder.append('\n')
             }
         }, document.body())
         text = builder.toString()
+        nodeStarts = textNodes.map { offsets[it] ?: 0 }.toIntArray()
+        paragraphs = buildList {
+            var start = 0
+            var previousEnd = 0
+            var breakIndex = 0
+            for (i in 0..text.length) {
+                if (i % 4096 == 0) checkWork()
+                if (i == text.length || text[i] == '\n') {
+                    var from = start; var to = i
+                    while (from < to && text[from].isWhitespace()) from++
+                    while (to > from && text[to - 1].isWhitespace()) to--
+                    if (to > from) {
+                        while (breakIndex < breaks.size && breaks[breakIndex] < previousEnd) breakIndex++
+                        add(ParagraphSpan(from, to, breaks.getOrNull(breakIndex)?.let { it <= from } == true))
+                        previousEnd = to
+                    }
+                    start = i + 1
+                }
+            }
+        }
+        quoteIndex = TextIndex(text, checkWork)
     }
-    fun anchor(id: String): Int? = document.getElementById(id)?.let { offsets[it] }
-    fun selector(css: String): Int? = runCatching { document.selectFirst(css)?.let { offsets[it] } }.getOrNull()
-    fun selectorAt(offset: Int): String? = textNodes.lastOrNull { normalized(it).isNotEmpty() && (offsets[it] ?: 0) <= offset }
-        ?.parent()?.let { parent ->
-            val element = (parent as? Element)?.closest("p,li,blockquote,h1,h2,h3,h4,h5,h6,td,div") ?: parent as? Element
-            element?.let(::stableSelector)
+    fun finishIndexing() { checkWork = {} }
+    fun anchor(id: String): Int? = idElements[id]?.let { offsets[it] }
+    fun selector(css: String): Int? = element(css)?.let { offsets[it] }
+    /** App-generated paths use direct child indexes; general selectors retain their strict fallback. */
+    private fun element(css: String): Element? = runCatching {
+        val parts = css.split('>').map { it.trim() }
+        var current: Element? = null
+        for ((index, part) in parts.withIndex()) {
+            if (cssId.matches(part)) {
+                val found = idElements[part.drop(1)] ?: return@runCatching null
+                if (index > 0 && found.parent() !== current) return@runCatching null
+                current = found
+            } else {
+                val match = cssPart.matchEntire(part) ?: return@runCatching document.select(css).singleOrNull()
+                val tag = match.groupValues[1].lowercase()
+                val number = match.groupValues[2]
+                val nth = number.takeIf { it.isNotEmpty() }?.toIntOrNull()
+                if (number.isNotEmpty() && (nth == null || nth < 1)) return@runCatching null
+                if (index == 0) {
+                    if (nth != null && nth != 1 && tag in setOf("html", "body")) return@runCatching null
+                    current = when (tag) {
+                        "body" -> document.body()
+                        "html" -> document.children().singleOrNull { it.normalName() == "html" }
+                        else -> return@runCatching document.select(css).singleOrNull()
+                    }
+                } else {
+                    val children = childrenByTag[current]?.get(tag) ?: return@runCatching null
+                    current = if (nth == null) children.singleOrNull() else children.getOrNull(nth - 1)
+                    if (current == null) return@runCatching null
+                }
+            }
         }
-    private fun normalized(node: TextNode) = node.wholeText.replace(offsetWhitespace, " ").takeIf { it.isNotBlank() }.orEmpty()
-    private fun stableSelector(element: Element): String {
-        if (element.id().matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) && document.select("#${element.id()}").size == 1) return "#${element.id()}"
-        val parts = mutableListOf<String>()
-        var current: Element? = element
-        while (current != null && current.normalName() != "#root") {
-            val tag = current.normalName()
-            var sibling = current.previousElementSibling()
-            var index = 1
-            while (sibling != null) { if (sibling.normalName() == tag) index++; sibling = sibling.previousElementSibling() }
-            parts.add("$tag:nth-of-type($index)")
-            if (tag == "body") break
-            current = current.parent()
+        current
+    }.getOrNull()
+    fun selectorAt(offset: Int): String? {
+        var index = nodeStarts.binarySearch(offset).let { if (it >= 0) it else -it - 2 }
+        while (index >= 0 && (nodeLengths[textNodes[index]] ?: 0) == 0) index--
+        return textNodes.getOrNull(index)?.parent()?.let { parent ->
+            val container = parent as? Element ?: return@let null
+            val element = container.closest("p,li,blockquote,h1,h2,h3,h4,h5,h6,td,div") ?: container
+            stableSelector(element)
         }
-        return parts.asReversed().joinToString(" > ")
+    }
+    private fun normalizeDomText(value: String): String {
+        var previousSpace = false
+        var needsNormalization = false
+        for (index in value.indices) {
+            if (index % 4096 == 0) checkWork()
+            val ch = value[index]
+            val whitespace = ch in " \t\n\u000B\u000C\r"
+            if (whitespace && (ch != ' ' || previousSpace)) { needsNormalization = true; break }
+            previousSpace = whitespace
+        }
+        if (!needsNormalization) return value
+        return buildString(value.length) {
+        var i = 0
+        while (i < value.length) {
+            if (i % 4096 == 0) checkWork()
+            val ch = value[i++]
+            if (ch in " \t\n\u000B\u000C\r") {
+                append(' ')
+                while (i < value.length && value[i] in " \t\n\u000B\u000C\r") { if (i % 4096 == 0) checkWork(); i++ }
+            } else append(ch)
+        }
+    }
+    }
+    private fun normalized(node: TextNode) = if ((nodeLengths[node] ?: 0) == 0) "" else normalizeDomText(node.wholeText)
+    private fun stableSelector(element: Element): String = synchronized(selectorCache) {
+        selectorCache.getOrPut(element) {
+            if (element.id().matches(Regex("[A-Za-z][A-Za-z0-9_-]*")) && idElements[element.id()] === element) "#${element.id()}"
+            else {
+                val parts = mutableListOf<String>()
+                var current: Element? = element
+                while (current != null && current.normalName() != "#root") {
+                    val tag = current.normalName()
+                    parts.add("$tag:nth-of-type(${siblingIndexes[current] ?: 1})")
+                    if (tag == "body") break
+                    current = current.parent()
+                }
+                parts.asReversed().joinToString(" > ")
+            }
+        }
+    }
+    fun paragraphBefore(offset: Int): ParagraphSpan? {
+        var lo = 0; var hi = paragraphs.size
+        while (lo < hi) { val mid = (lo + hi) ushr 1; if (paragraphs[mid].start < offset) lo = mid + 1 else hi = mid }
+        return paragraphs.getOrNull(lo - 1)?.let { it.copy(end = minOf(it.end, offset)) }
     }
     private fun rawOffset(node: TextNode, normalizedOffset: Int): Int {
         if (normalizedOffset <= 0) return 0
@@ -99,7 +218,7 @@ class HtmlTextDocument(html: String) {
     fun domOffset(boundary: Map<*, *>?): Int? {
         boundary ?: return null
         val css = boundary["cssSelector"] as? String ?: return null
-        val element = runCatching { document.select(css).singleOrNull() }.getOrNull() ?: return null
+        val element = element(css) ?: return null
         val index = (boundary["textNodeIndex"] as? Number)?.toLong() ?: return null
         val children = element.childNodes().filterIsInstance<TextNode>()
         if (index !in 0 until children.size.toLong()) return null
@@ -121,21 +240,35 @@ class HtmlTextDocument(html: String) {
         }
         val quote = locator.text.highlight?.takeIf { it.isNotBlank() } ?: return null
         val css = locator.locations.otherLocations["cssSelector"] as? String
-        val element = css?.let { runCatching { document.select(it).singleOrNull() }.getOrNull() }
+        val element = css?.let { element(it) }
         if (css != null && element == null) return null
-        val nodes = if (element == null) textNodes else textNodes.filter { node ->
-            generateSequence<Node>(node) { it.parent() }.any { it === element }
+        val from = element?.let { offsets[it] } ?: 0
+        val to = element?.let { elementEnds[it] } ?: text.length
+        val index = quoteIndex
+        val needle = TextIndex.clean(quote)
+        if (needle.isEmpty()) return null
+        val before = locator.text.before?.let(TextIndex::clean).orEmpty()
+        val after = locator.text.after?.let(TextIndex::clean).orEmpty()
+        var cursor = index.lowerBound(from)
+        val ceiling = index.lowerBound(to)
+        var found: Pair<Int, Int>? = null
+        while (cursor < ceiling) {
+            val match = index.text.indexOf(needle, cursor)
+            if (match < 0 || match + needle.length > ceiling) break
+            val end = match + needle.length
+            // Compare only adjacent context, never copy/normalize the whole prefix and suffix per hit.
+            var left = match
+            while (left > 0 && index.text[left - 1] == ' ') left--
+            var right = end
+            while (right < index.text.length && index.text[right] == ' ') right++
+            if ((before.isEmpty() || left >= before.length && index.text.regionMatches(left - before.length, before, 0, before.length)) &&
+                (after.isEmpty() || index.text.regionMatches(right, after, 0, after.length))) {
+                if (found != null) return null
+                found = index.originalStart(match) to index.originalEnd(end - 1)
+            }
+            cursor = match + 1
         }
-        val from = nodes.firstOrNull()?.let { offsets[it] } ?: 0
-        val to = nodes.lastOrNull()?.let { (offsets[it] ?: 0) + normalized(it).length } ?: text.length
-        val pattern = quote.trim().split(Regex("\\s+")).joinToString("\\s+") { Regex.escape(it) }
-        fun clean(value: String) = value.replace(Regex("\\s+"), " ").trim()
-        val before = locator.text.before?.let(::clean).orEmpty()
-        val after = locator.text.after?.let(::clean).orEmpty()
-        val matches = Regex(pattern).findAll(text.substring(from, to)).map { (it.range.first + from) to (it.range.last + from + 1) }
-            .filter { (start, end) -> (before.isBlank() || clean(text.substring(0, start)).endsWith(before)) &&
-                (after.isBlank() || clean(text.substring(end)).startsWith(after)) }.take(2).toList()
-        return matches.singleOrNull()
+        return found
     }
     /** Readium 3.1.2 renders text quotes. Scope each quote to a stable block, with exact DOM endpoints too. */
     fun rangeLocators(resource: String, title: String?, from: Int, to: Int): List<Locator> {
@@ -202,6 +335,24 @@ class PublicationStructure private constructor(
         if (index < 0) return null
         return TextPoint(index, documents[index].point(locator).first)
     }
+    /** Automatic scenes require an exact endpoint, including the captured visible end. */
+    fun exactReadingBoundary(locator: Locator?): TextPoint? {
+        locator ?: return null
+        val spine = resources.indexOf(normalizeHref(locator.href.toString()))
+        if (spine < 0) return null
+        val doc = documents[spine]
+        val extra = locator.locations.otherLocations
+        if (extra.containsKey("domRange")) return doc.exactRange(locator)?.let { TextPoint(spine, it.second) }
+        if (extra.containsKey("quillReadingEndCss") || extra.containsKey("quillReadingEndText")) {
+            val css = extra["quillReadingEndCss"] as? String ?: return null
+            val quote = extra["quillReadingEndText"] as? String ?: return null
+            val end = locator.copy(locations = locator.locations.copy(otherLocations = extra + ("cssSelector" to css)),
+                text = Locator.Text(highlight = quote, before = extra["quillReadingEndBefore"] as? String))
+            return doc.exactRange(end)?.let { TextPoint(spine, it.second) }
+        }
+        if (!locator.text.highlight.isNullOrBlank()) return doc.exactRange(locator)?.let { TextPoint(spine, it.second) }
+        return doc.point(locator).takeIf { it.second }?.let { TextPoint(spine, it.first) }
+    }
     fun readingBoundary(locator: Locator?): TextPoint {
         locator ?: return beginning
         val dom = locator.locations.otherLocations["domRange"] as? Map<*, *>
@@ -253,13 +404,14 @@ class PublicationStructure private constructor(
         }
     }.trim()
     fun text(section: PublicationSection): String = text(section.start, section.end)
+    fun sectionAt(point: TextPoint): PublicationSection? = sections.filter { point >= it.start && point < it.end }.maxByOrNull { it.depth }
     fun locator(point: TextPoint, excerpt: String): Locator {
         val doc = documents[point.spine]
         return Locator(org.readium.r2.shared.util.Url(resources[point.spine])!!,
             org.readium.r2.shared.util.mediatype.MediaType.XHTML,
-            title = sections.filter { point >= it.start && point < it.end }.maxByOrNull { it.depth }?.title,
+            title = sectionAt(point)?.title,
             locations = Locator.Locations(otherLocations = doc.selectorAt(point.offset)?.let { mapOf("cssSelector" to it) }.orEmpty()),
-            text = Locator.Text(highlight = excerpt, before = doc.text.substring(0, point.offset).takeLast(80)))
+            text = Locator.Text(highlight = excerpt, before = doc.text.substring((point.offset - 80).coerceAtLeast(0), point.offset)))
     }
     val beginning: TextPoint get() = TextPoint(0, 0)
     val end: TextPoint get() = TextPoint(documents.lastIndex, documents.lastOrNull()?.text?.length ?: 0)
@@ -277,11 +429,13 @@ class PublicationStructure private constructor(
             URI(href.substringBefore('#').substringBefore('?')).normalize().path
         }.getOrDefault(href.substringBefore('#').substringBefore('?'))).removePrefix("./")
 
-        suspend fun load(publication: Publication): PublicationStructure = withContext(Dispatchers.IO) {
+        suspend fun load(publication: Publication): PublicationStructure = withContext(Dispatchers.Default) {
+            val job = currentCoroutineContext()[kotlinx.coroutines.Job]
             val documents = publication.readingOrder.map { link ->
+                currentCoroutineContext().ensureActive()
                 val resource = publication.get(link) ?: error("Book resource is unavailable: ${link.href}")
-                val bytes = resource.read().getOrElse { error("Cannot read book resource: ${link.href}") }
-                HtmlTextDocument(String(bytes, Charsets.UTF_8))
+                val bytes = withContext(Dispatchers.IO) { resource.read().getOrElse { error("Cannot read book resource: ${link.href}") } }
+                HtmlTextDocument(String(bytes, Charsets.UTF_8), { job?.ensureActive() }).also { it.finishIndexing() }
             }
             create(publication.readingOrder.map { it.href.toString() }, publication.tableOfContents, documents)
         }
@@ -305,10 +459,10 @@ class PublicationStructure private constructor(
             }
             walk(toc, 0, null)
             val bookEnd = TextPoint(documents.lastIndex, documents.last().text.length)
-            if (entries.isEmpty()) resources.forEachIndexed { index, href ->
-                val url = org.readium.r2.shared.util.Url(href) ?: return@forEachIndexed
-                entries.add(Entry(Link(href = url, title = "Chapter ${index + 1}"), 0, null, TextPoint(index, 0), "spine:$index"))
-            }
+            if (entries.isEmpty()) return PublicationStructure(resources.mapIndexed { index, href ->
+                PublicationSection("spine:$index", "Chapter ${index + 1}", href, 0, null, TextPoint(index, 0),
+                    if (index < resources.lastIndex) TextPoint(index + 1, 0) else bookEnd)
+            }, normalized, documents)
             val sections = entries.mapIndexed { index, entry ->
                 val next = entries.drop(index + 1).firstOrNull { it.depth <= entry.depth && it.start > entry.start }
                 PublicationSection(entry.id, entry.link.title ?: "Untitled", entry.link.href.toString(), entry.depth,

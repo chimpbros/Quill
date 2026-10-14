@@ -44,6 +44,7 @@ import com.yugentech.quill.R
 fun AiraChatHeader(
     modifier: Modifier = Modifier,
     isLoading: Boolean,
+    preparationMessage: String? = null,
     isStreaming: Boolean,
     isVisuallyTyping: Boolean,
     lastChapterTitle: String?,
@@ -106,7 +107,7 @@ fun AiraChatHeader(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "Current Chapter",
+                    text = preparationMessage ?: "Current Chapter",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Medium

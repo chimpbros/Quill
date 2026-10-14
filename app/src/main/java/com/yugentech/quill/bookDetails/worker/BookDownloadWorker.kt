@@ -25,11 +25,13 @@ import java.net.ConnectException
 class BookDownloadWorker(
     context: Context,
     params: WorkerParameters,
-    private val bookDao: BookDao
+    private val bookDao: BookDao,
+    private val structures: com.yugentech.quill.aira.rag.BookStructureStore
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val bookId = inputData.getString("BOOK_ID") ?: return@withContext Result.failure()
+        structures.invalidate(bookId)
         val downloadUrl = inputData.getString("DOWNLOAD_URL") ?: return@withContext Result.failure()
         val bookTitle = inputData.getString("BOOK_TITLE") ?: "Unknown"
 

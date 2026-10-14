@@ -17,7 +17,8 @@ val bookDetailsModule = module {
             bookDao = get(),
             chunkDao = get(),
             indexingStateDao = get(),
-            workManager = get()
+            workManager = get(),
+            structures = get()
 )
     }
 

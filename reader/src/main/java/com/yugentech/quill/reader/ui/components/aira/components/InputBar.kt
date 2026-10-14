@@ -96,7 +96,7 @@ fun InputBar(
             enabled = !airaUiState.isLoading,
             placeholder = {
                 Text(
-                    text = if (!airaUiState.isLoading) "Ask me anything…" else loadingPlaceholder,
+                    text = if (!airaUiState.isLoading) "Ask me anything…" else airaUiState.preparationMessage ?: loadingPlaceholder,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
